@@ -121,7 +121,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.22";
+const DATA_VERSION="0.23";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:288,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -347,7 +347,7 @@ function render(tab="home"){
 function home(){
  let a=available(),r=remaining(),pct=a?Math.max(0,Math.min(100,spent()/a*100)):0;
  return `<div class="top"><div style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" style="width:36px;height:36px;border-radius:10px"><h1>MoneyWise</h1></div><div class="muted" style="margin-top:4px">${new Date().toLocaleString(undefined,{month:"long",year:"numeric"})}</div></div>
- <div class="card hero tappable-card" onclick="render('cashflow')"><div class="muted">Available this month</div><div class="big">${euro(r)}</div><div class="progress"><div style="width:${pct}%"></div></div><div class="row small"><span>Spent ${euro(spent())}</span><span>Available ${euro(a)}</span></div><button onclick="openAdd('expense')">＋ Add spending</button></div>
+ <div class="card hero tappable-card" role="button" tabindex="0" onclick="render('cashflow')" onkeydown="if(event.key==='Enter'||event.key===' ')render('cashflow')"><div class="muted">Available this month</div><div class="big">${euro(r)}</div><div class="progress"><div style="width:${pct}%"></div></div><div class="row small"><span>Spent ${euro(spent())}</span><span>Available ${euro(a)}</span></div><button onclick="openAdd('expense')">＋ Add spending</button></div>
  <div class="grid"><div class="metric"><span class="muted">Base allowance</span><b>${euro(state.flexible)}</b></div><div class="metric"><span class="muted">Carried in</span><b>${euro(state.carry)}</b></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div><div class="metric"><span class="muted">Projected</span><b>${euro(projected())}</b></div></div>
  <div class="card">
   <div class="row"><b>Unused allowance</b></div>
@@ -680,7 +680,7 @@ function saveGifts(){
 function targetChangedAllowancePrompt(oldTarget,newTarget){
  if(Number(oldTarget)===Number(newTarget))return;
  const months=monthsInPlan(),outcome=essentialsOutcome(),suggested=Math.max(0,(outcome-Number(newTarget))/months),perPay=suggested*12/(Number(state.paychecksPerYear)||12);
- if(confirm(`Hey — you changed your target to ${euro(newTarget)}.\n\nAuto Assign can adjust your allowance to ${euro(suggested)}/month so the new target is met.\n\nEquivalent per paycheck: ${euro(perPay)}\n\nChange allowance to ${euro(suggested)}?\n\nOK = Auto Assign new allowance\nCancel = keep current allowance`)) state.flexible=suggested;
+ if(confirm(`Hey — you changed your target to ${euro(newTarget)}.\n\nAuto Assign can adjust your allowance to ${euro(suggested)}/month so the new target is met.\n\nEquivalent per paycheck: ${euro(perPay)}\n\nChange allowance to ${euro(suggested)}?\n\nOK = Auto Assign new allowance\nCancel = keep current allowance`)) { state.flexible=suggested; save(); render("plan"); } save(); render("plan");
 }
 function settings(){
  document.getElementById("sheet").innerHTML=`<h2>Edit plan assumptions</h2><p class="muted">These values are stored locally on this device.</p>${field("Timeframe (years)","py",state.years,".5")}${field("Starting savings (€)","ps",state.startingSavings,".01")}${field("Project start date","pdate",state.startDate,"","date")}${field("Annual income (€)","pi",state.annualPay,".01")}${field("Target savings (€)","pt",state.target,".01")}${field("Paychecks per year","pp",state.paychecksPerYear,"1")}${field("Pay day (day of month)","pd",state.payDay,"1")}${field("Monthly allowance (€)","pf",state.flexible,".01")}<button onclick="saveSettings()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
