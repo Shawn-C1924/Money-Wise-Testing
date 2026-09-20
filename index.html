@@ -112,7 +112,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.18";
+const DATA_VERSION="0.19";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:288,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -150,7 +150,7 @@ const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annual
 let state;
 try{
   const saved=JSON.parse(localStorage.getItem("moneywise")||"null");
-  if(saved && ["0.11","0.12","0.13","0.14","0.15","0.16","0.17","0.18"].includes(String(saved.version))){
+  if(saved && ["0.11","0.12","0.13","0.14","0.15","0.16","0.17","0.18","0.19"].includes(String(saved.version))){
     state={...structuredClone(DEFAULT),...saved,version:DATA_VERSION};
   }else{
     state=structuredClone(DEFAULT);
@@ -289,16 +289,25 @@ function ensurePaydayIncome(){
   const id="pay-"+month;
   if(!state.transactions.some(x=>x.id===id) && !state.skippedPaychecks[id]){
     state.transactions.push({id,month,desc:"Pay",amount,cat:"Income",type:"income",automatic:true});
+    save();
   }
-  // For a 13-pay setup, MoneyWise adds the extra annual paycheck in December.
-  // If the real extra-pay month differs, it can be edited by deleting this record and adding income manually.
-  if(paychecks===13 && now.getMonth()===11){
-    const extraId="pay-extra-"+now.getFullYear();
-    if(!state.transactions.some(x=>x.id===extraId)){
-      state.transactions.push({id:extraId,month,desc:"13th Pay",amount,cat:"Income",type:"income",automatic:true});
-    }
-  }
-  if(state.transactions.some(x=>x.id===id) || state.transactions.some(x=>x.id==="pay-extra-"+now.getFullYear()))save();
+}
+function extraPaycheckRecorded(year=new Date().getFullYear()){
+  return state.transactions.some(x=>x.id==="pay-extra-"+year || (x.type==="income" && x.extraPaycheck===true && new Date(x.date||x.month+"-01T12:00:00").getFullYear()===year));
+}
+function extraPaycheckStatus(){
+  const year=new Date().getFullYear(),paychecks=Number(state.paychecksPerYear)||12;
+  if(paychecks!==13)return null;
+  return {year,recorded:extraPaycheckRecorded(year),amount:paycheckAmount()};
+}
+function recordExtraPaycheck(){
+  const status=extraPaycheckStatus();
+  if(!status)return;
+  if(status.recorded)return alert("The 13th paycheck for this year is already recorded in Cash Flow.");
+  const amount=paycheckAmount();
+  if(!confirm(`Record the 13th paycheck as income for ${euro(amount)} in ${monthLabel(monthKey())}?\n\nIf you received the extra paycheck in a different month, cancel and use Add income / profit instead.`))return;
+  state.transactions.push({id:"pay-extra-"+status.year,month:monthKey(),desc:"13th Pay",amount,cat:"Income",type:"income",extraPaycheck:true,manual:true});
+  save();render("cashflow");
 }
 function available(){return state.flexible+state.carry}
 function remaining(){return available()-spent()}
@@ -342,6 +351,7 @@ function cashflow(){
  return `<div class="top"><h1>Cash Flow</h1><div class="muted">Income, spending & monthly balance</div></div>
  <div class="card hero"><div class="muted">Current savings</div><div class="big">${euro(currentSavings())}</div><div class="row small"><span>Starting ${euro(state.startingSavings)}</span><span>Change ${euro(currentSavings()-state.startingSavings)}</span></div></div>
  <div class="card"><div class="row"><b>Monthly allowance</b><b>${euro(state.flexible)}</b></div><div class="row small"><span>Spent this month</span><span>${euro(spent())}</span></div><div class="row small"><span>Remaining</span><span>${euro(remaining())}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="openAdd('expense')">＋ Add spending</button><button class="secondary" onclick="openAdd('income')">＋ Add income / profit</button></div></div>
+ ${extraPaycheckStatus()?`<div class="card"><div class="row"><b>13th paycheck</b><span class="pill">${extraPaycheckStatus().recorded?"Recorded":"Not recorded"}</span></div><div class="muted">Your annual income is divided across 13 paychecks. The extra paycheck is not assigned to a month automatically.</div><div class="row" style="margin-top:10px"><span>Expected extra pay</span><b>${euro(extraPaycheckStatus().amount)}</b></div>${extraPaycheckStatus().recorded?`<div class="muted small">Recorded in Cash Flow for ${extraPaycheckStatus().year}.</div>`:`<button onclick="recordExtraPaycheck()">＋ Record 13th paycheck</button><div class="muted small">If your extra paycheck arrives in a different month, use Add income / profit and enter it there.</div>`}</div>`:""}
  <div class="card">${months().map(k=>{let open=state.openMonths[k],out=spent(k),inc=incomeTotal(k),limit=state.flexible+(k===monthKey()?state.carry:0),diff=limit-out,cls=diff>=0?"under":"over",label=diff>=0?"Under limit":"Over limit";return `<div class="month-head ${cls}" onclick="toggleMonth('${k}')"><div class="row"><span><b>${monthLabel(k)}</b> <span class="status">${label}</span></span><span><b>${euro(out)}</b> ${open?"▲":"▼"}</span></div><div class="row small"><span>Income ${euro(inc)}</span><span>${diff>=0?euro(diff)+" left":euro(Math.abs(diff))+" over"}</span></div></div>${open?`<div>${txs(k).length?txs(k).map(x=>`<div class="item"><div class="row"><span>${esc(x.desc)} <span class="pill">${esc(x.cat)}</span></span><span class="${x.type==="income"?"cash-in":"spend-outflow"}">${x.type==="income"?"↑":"↓"} ${euro(x.amount)}</span></div><div style="text-align:right"><button class="icon delete" onclick="event.stopPropagation();delTx('${x.id}')">🗑</button></div></div>`).join(""):'<div class="empty">No cash flow recorded.</div>'}</div>`:""}`}).join("")}</div>`;
 }
 
@@ -392,7 +402,7 @@ function plan(){
  <div class="card"><div class="row"><b>Current savings</b><b class="${change>=0?"cash-in":"spend-outflow"}">${change>=0?"↑":"↓"} ${euro(Math.abs(change))}</b></div><div class="big">${euro(current)}</div><div class="row small"><span>Started ${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span><span>Target ${euro(state.target)}</span></div><div class="muted">Current savings reflects your starting savings plus recorded income/profit, spending and stashed amounts.</div></div>
  <div class="card"><div class="muted">Projected finish</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Includes Essentials and your monthly allowance.</div></div>
  <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Assumes nothing extra is spent from your allowance.</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
- <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear===13?"13th pay is automatically added in December; add/edit it manually if your extra payday falls elsewhere.":"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
+ <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear===13?"12 monthly pay entries are automatic. The 13th paycheck stays unassigned until you record it in Cash Flow.":"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
  <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(state.flexible)}</b></div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button></div>
  <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div></div></div>
  <div class="card"><b>Data safety</b><div class="muted">Automatic local snapshot: ${backupInfo()}</div><button class="secondary" onclick="openBackupSettings()">💾 Backup & restore</button></div>`;
