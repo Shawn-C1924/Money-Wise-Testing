@@ -26,6 +26,7 @@ button{border:0;border-radius:13px;padding:11px 14px;font-weight:700;background:
 input,select{width:100%;padding:12px;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:12px;font-size:16px;margin:5px 0 10px}.modal{position:fixed;inset:0;background:#0009;display:none;align-items:flex-end;z-index:10}.modal.open{display:flex}.sheet{background:var(--card);color:var(--text);width:100%;border-radius:24px 24px 0 0;padding:20px 18px 30px;max-height:92vh;overflow:auto}
 .toggle{display:flex;justify-content:space-between;align-items:center}.switch{width:50px;height:30px;border-radius:20px;background:#87958f;padding:3px;cursor:pointer}.switch i{display:block;width:24px;height:24px;border-radius:50%;background:white;transition:.2s}.switch.on{background:var(--accent)}.switch.on i{transform:translateX(20px)}
 .theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.theme-choice{padding:13px 6px;border:1px solid var(--line);border-radius:14px;text-align:center;background:var(--soft);cursor:pointer}.theme-choice.active{border:2px solid var(--accent);padding:12px 5px}.theme-icon{font-size:23px;display:block;margin-bottom:4px}.empty{text-align:center;padding:18px 0;color:var(--muted)}
+.extra-pay-list{display:grid;gap:8px;margin-top:10px}.extra-pay-list .row{gap:10px}.extra-pay-list button{margin:0;width:auto;padding:8px 12px}
 </style>
 
 
@@ -112,7 +113,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.19";
+const DATA_VERSION="0.20";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:288,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -292,22 +293,28 @@ function ensurePaydayIncome(){
     save();
   }
 }
-function extraPaycheckRecorded(year=new Date().getFullYear()){
-  return state.transactions.some(x=>x.id==="pay-extra-"+year || (x.type==="income" && x.extraPaycheck===true && new Date(x.date||x.month+"-01T12:00:00").getFullYear()===year));
+function extraPaycheckCount(){return Math.max(0,(Number(state.paychecksPerYear)||12)-12)}
+function extraPaychecksForYear(year=new Date().getFullYear()){
+  const count=extraPaycheckCount(),out=[];
+  for(let n=1;n<=count;n++){
+    const tx=state.transactions.find(x=>x.id===`pay-extra-${year}-${n}` || (x.type==="income" && x.extraPaycheck===true && (Number(x.extraPaycheckNumber)||1)===n && new Date(x.date||x.month+"-01T12:00:00").getFullYear()===year));
+    out.push({number:n,recorded:!!tx,tx});
+  }
+  return out;
 }
-function extraPaycheckStatus(){
-  const year=new Date().getFullYear(),paychecks=Number(state.paychecksPerYear)||12;
-  if(paychecks!==13)return null;
-  return {year,recorded:extraPaycheckRecorded(year),amount:paycheckAmount()};
-}
-function recordExtraPaycheck(){
-  const status=extraPaycheckStatus();
-  if(!status)return;
-  if(status.recorded)return alert("The 13th paycheck for this year is already recorded in Cash Flow.");
+function recordExtraPaycheck(n){
+  const year=new Date().getFullYear(),status=extraPaychecksForYear(year).find(x=>x.number===n);
+  if(!status||status.recorded)return;
   const amount=paycheckAmount();
-  if(!confirm(`Record the 13th paycheck as income for ${euro(amount)} in ${monthLabel(monthKey())}?\n\nIf you received the extra paycheck in a different month, cancel and use Add income / profit instead.`))return;
-  state.transactions.push({id:"pay-extra-"+status.year,month:monthKey(),desc:"13th Pay",amount,cat:"Income",type:"income",extraPaycheck:true,manual:true});
+  if(!confirm(`Record extra paycheck ${n} of ${extraPaycheckCount()} as income for ${euro(amount)} in ${monthLabel(monthKey())}?\n\nIf you receive it in a different month, cancel and use Add income / profit instead.`))return;
+  state.transactions.push({id:`pay-extra-${year}-${n}`,month:monthKey(),desc:`Extra Pay ${n}`,amount,cat:"Income",type:"income",extraPaycheck:true,extraPaycheckNumber:n,manual:true});
   save();render("cashflow");
+}
+function extraPaycheckSummary(){
+  const count=extraPaycheckCount();
+  if(!count)return "";
+  const items=extraPaychecksForYear();
+  return `<div class="card"><div class="row"><b>Extra paychecks</b><span class="pill">${items.filter(x=>x.recorded).length}/${count} recorded</span></div><div class="muted">You have ${count} paycheck${count===1?"":"s"} beyond the 12 regular monthly payments. These are not assigned to a month automatically.</div><div class="extra-pay-list">${items.map(x=>x.recorded?`<div class="row small"><span>Extra paycheck ${x.number}</span><span class="pill">Recorded</span></div>`:`<div class="row small"><span>Extra paycheck ${x.number}<br><span class="muted">${euro(paycheckAmount())}</span></span><button class="secondary" onclick="recordExtraPaycheck(${x.number})">＋ Record</button></div>`).join("")}</div></div>`;
 }
 function available(){return state.flexible+state.carry}
 function remaining(){return available()-spent()}
@@ -328,6 +335,7 @@ function render(tab="home"){
  let app=document.getElementById("app");app.innerHTML=tab==="home"?home():tab==="cashflow"?cashflow():tab==="budget"?budget():plan();
  document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab))
 }
+
 function home(){
  let a=available(),r=remaining(),pct=a?Math.max(0,Math.min(100,spent()/a*100)):0;
  return `<div class="top"><div style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" style="width:36px;height:36px;border-radius:10px"><h1>MoneyWise</h1></div><div class="muted" style="margin-top:4px">${new Date().toLocaleString(undefined,{month:"long",year:"numeric"})}</div></div>
@@ -351,7 +359,7 @@ function cashflow(){
  return `<div class="top"><h1>Cash Flow</h1><div class="muted">Income, spending & monthly balance</div></div>
  <div class="card hero"><div class="muted">Current savings</div><div class="big">${euro(currentSavings())}</div><div class="row small"><span>Starting ${euro(state.startingSavings)}</span><span>Change ${euro(currentSavings()-state.startingSavings)}</span></div></div>
  <div class="card"><div class="row"><b>Monthly allowance</b><b>${euro(state.flexible)}</b></div><div class="row small"><span>Spent this month</span><span>${euro(spent())}</span></div><div class="row small"><span>Remaining</span><span>${euro(remaining())}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="openAdd('expense')">＋ Add spending</button><button class="secondary" onclick="openAdd('income')">＋ Add income / profit</button></div></div>
- ${extraPaycheckStatus()?`<div class="card"><div class="row"><b>13th paycheck</b><span class="pill">${extraPaycheckStatus().recorded?"Recorded":"Not recorded"}</span></div><div class="muted">Your annual income is divided across 13 paychecks. The extra paycheck is not assigned to a month automatically.</div><div class="row" style="margin-top:10px"><span>Expected extra pay</span><b>${euro(extraPaycheckStatus().amount)}</b></div>${extraPaycheckStatus().recorded?`<div class="muted small">Recorded in Cash Flow for ${extraPaycheckStatus().year}.</div>`:`<button onclick="recordExtraPaycheck()">＋ Record 13th paycheck</button><div class="muted small">If your extra paycheck arrives in a different month, use Add income / profit and enter it there.</div>`}</div>`:""}
+ ${extraPaycheckSummary()}
  <div class="card">${months().map(k=>{let open=state.openMonths[k],out=spent(k),inc=incomeTotal(k),limit=state.flexible+(k===monthKey()?state.carry:0),diff=limit-out,cls=diff>=0?"under":"over",label=diff>=0?"Under limit":"Over limit";return `<div class="month-head ${cls}" onclick="toggleMonth('${k}')"><div class="row"><span><b>${monthLabel(k)}</b> <span class="status">${label}</span></span><span><b>${euro(out)}</b> ${open?"▲":"▼"}</span></div><div class="row small"><span>Income ${euro(inc)}</span><span>${diff>=0?euro(diff)+" left":euro(Math.abs(diff))+" over"}</span></div></div>${open?`<div>${txs(k).length?txs(k).map(x=>`<div class="item"><div class="row"><span>${esc(x.desc)} <span class="pill">${esc(x.cat)}</span></span><span class="${x.type==="income"?"cash-in":"spend-outflow"}">${x.type==="income"?"↑":"↓"} ${euro(x.amount)}</span></div><div style="text-align:right"><button class="icon delete" onclick="event.stopPropagation();delTx('${x.id}')">🗑</button></div></div>`).join(""):'<div class="empty">No cash flow recorded.</div>'}</div>`:""}`}).join("")}</div>`;
 }
 
@@ -402,7 +410,7 @@ function plan(){
  <div class="card"><div class="row"><b>Current savings</b><b class="${change>=0?"cash-in":"spend-outflow"}">${change>=0?"↑":"↓"} ${euro(Math.abs(change))}</b></div><div class="big">${euro(current)}</div><div class="row small"><span>Started ${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span><span>Target ${euro(state.target)}</span></div><div class="muted">Current savings reflects your starting savings plus recorded income/profit, spending and stashed amounts.</div></div>
  <div class="card"><div class="muted">Projected finish</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Includes Essentials and your monthly allowance.</div></div>
  <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Assumes nothing extra is spent from your allowance.</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
- <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear===13?"12 monthly pay entries are automatic. The 13th paycheck stays unassigned until you record it in Cash Flow.":"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
+ <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear>12?`12 monthly pay entries are automatic. ${state.paychecksPerYear-12} extra paycheck${state.paychecksPerYear-12===1?"":"s"} stay unassigned until you record them in Cash Flow.`:"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
  <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(state.flexible)}</b></div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button></div>
  <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div></div></div>
  <div class="card"><b>Data safety</b><div class="muted">Automatic local snapshot: ${backupInfo()}</div><button class="secondary" onclick="openBackupSettings()">💾 Backup & restore</button></div>`;
