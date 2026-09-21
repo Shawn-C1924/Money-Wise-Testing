@@ -152,7 +152,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.28";
+const DATA_VERSION="0.30";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:288,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -186,11 +186,11 @@ const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annual
   {person:"Child 1",occasion:"Christmas",amount:50},
   {person:"Child 2",occasion:"Birthday",amount:50},
   {person:"Child 2",occasion:"Christmas",amount:50}
-],weekendFood:173.33,general:100,transactions:[],carry:0,carryHistory:[],stashHistory:[],monthlyActions:{},incomeHistory:[],startDate:"",payDay:1,paychecksPerYear:12,hiddenBudgetSections:{},skippedPaychecks:{},autoBackup:true,backupIntervalMinutes:15,dark:false,theme:"iconic",openMonths:{},customSections:[],wallets:[],walletFunding:{},allowanceCredits:{}};
+],weekendFood:173.33,general:100,transactions:[],carry:0,carryHistory:[],stashHistory:[],monthlyActions:{},incomeHistory:[],startDate:"",payDay:1,paychecksPerYear:12,payHistory:[],hiddenBudgetSections:{},skippedPaychecks:{},autoBackup:true,backupIntervalMinutes:15,dark:false,theme:"iconic",openMonths:{},customSections:[],wallets:[],walletFunding:{},allowanceCredits:{}};
 let state;
 try{
   const saved=JSON.parse(localStorage.getItem("moneywise")||"null");
-  if(saved && /^0\.([1-9][0-9]*)$/.test(String(saved.version)) && Number(String(saved.version).split(".")[1])>=11 && Number(String(saved.version).split(".")[1])<=27){
+  if(saved && /^0\.([1-9][0-9]*)$/.test(String(saved.version)) && Number(String(saved.version).split(".")[1])>=11 && Number(String(saved.version).split(".")[1])<=29){
     state={...structuredClone(DEFAULT),...saved,version:DATA_VERSION};
   }else{
     state=structuredClone(DEFAULT);
@@ -204,6 +204,10 @@ if(!state.budgetDeduct)state.budgetDeduct={};
 if(!Array.isArray(state.wallets))state.wallets=[];
 if(!state.walletFunding)state.walletFunding={};
 if(!state.allowanceCredits)state.allowanceCredits={};
+if(!Array.isArray(state.payHistory))state.payHistory=[];
+if(!state.payHistory.length){state.payHistory=[{effectiveDate:state.startDate||new Date().toISOString().slice(0,10),annualPay:Number(state.annualPay)||0}]}
+state.payHistory=state.payHistory.filter(x=>x&&x.effectiveDate).map(x=>({effectiveDate:String(x.effectiveDate).slice(0,10),annualPay:Math.max(0,Number(x.annualPay)||0)})).sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate));
+if(state.payHistory.length)state.annualPay=Number(state.payHistory[state.payHistory.length-1].annualPay)||0;
 state.wallets.forEach((w,i)=>{if(!w.id)w.id="wallet-"+Date.now()+"-"+i;if(!w.name)w.name="Wallet "+(i+1);if(w.balance===undefined)w.balance=0});
 if(state.recurring?.some(x=>x.deductOnPaycheck!==undefined)){state.budgetDeduct.recurring={onPaycheck:!!state.recurring.some(x=>x.deductOnPaycheck)};state.recurring.forEach(x=>delete x.deductOnPaycheck)}
 if(state.customSections)state.customSections.forEach((x,i)=>{if(x.deductOnPaycheck!==undefined){state.budgetDeduct["custom-"+i]={onPaycheck:!!x.deductOnPaycheck};delete x.deductOnPaycheck}});
@@ -257,6 +261,10 @@ function handleBackupImport(input){
       if(!Array.isArray(state.wallets))state.wallets=[];
       if(!state.walletFunding)state.walletFunding={};
 if(!state.allowanceCredits)state.allowanceCredits={};
+if(!Array.isArray(state.payHistory))state.payHistory=[];
+if(!state.payHistory.length){state.payHistory=[{effectiveDate:state.startDate||new Date().toISOString().slice(0,10),annualPay:Number(state.annualPay)||0}]}
+state.payHistory=state.payHistory.filter(x=>x&&x.effectiveDate).map(x=>({effectiveDate:String(x.effectiveDate).slice(0,10),annualPay:Math.max(0,Number(x.annualPay)||0)})).sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate));
+if(state.payHistory.length)state.annualPay=Number(state.payHistory[state.payHistory.length-1].annualPay)||0;
       if(!state.autoBackup && state.autoBackup!==false)state.autoBackup=true;
       save();
       alert("Backup restored successfully.");
@@ -329,6 +337,18 @@ function paydayDateForMonth(d=new Date()){
   const y=d.getFullYear(),m=d.getMonth(),last=new Date(y,m+1,0).getDate();
   return new Date(y,m,Math.min(Math.max(1,Number(state.payDay)||1),last));
 }
+function upsertPayHistory(effectiveDate,annualPay){
+  const date=String(effectiveDate||new Date().toISOString().slice(0,10)).slice(0,10),amount=Math.max(0,Number(annualPay)||0);
+  const existing=(state.payHistory||[]).find(x=>x.effectiveDate===date);
+  if(existing)existing.annualPay=amount;else state.payHistory.push({effectiveDate:date,annualPay:amount});
+  state.payHistory.sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate));
+  state.annualPay=payRateForDate(new Date());
+}
+function removePayHistory(i){
+  if((state.payHistory||[]).length<=1)return alert("Keep at least one pay rate in your history.");
+  if(!confirm("Remove this pay history entry? Future calculations will use the previous rate until the next change."))return;
+  state.payHistory.splice(i,1);state.annualPay=payRateForDate(new Date());save();render("plan");
+}
 function walletById(id){return (state.wallets||[]).find(w=>w.id===id)}
 function walletTotal(){return (state.wallets||[]).reduce((a,w)=>a+(Number(w.balance)||0),0)}
 function walletLabel(id){return walletById(id)?.name||"Select wallet"}
@@ -378,7 +398,7 @@ function ensurePaydayIncome(){
   const month=monthKey(now);
   if(state.startDate && monthKey(new Date(state.startDate))>month)return;
   const paychecks=Number(state.paychecksPerYear)||12;
-  const amount=Number(state.annualPay||0)/paychecks;
+  const amount=payRateForDate(pd)/paychecks;
   const id="pay-"+month;
   if(!state.transactions.some(x=>x.id===id) && !state.skippedPaychecks[id]){
     state.transactions.push({id,month,desc:"Pay",amount,cat:"Income",type:"income",automatic:true});
@@ -414,15 +434,18 @@ function available(){return (Number(state.flexible)||0)+state.carry+allowanceCre
 function allowanceLimit(k=monthKey()){return (Number(state.flexible)||0)+(k===monthKey()?Number(state.carry)||0:0)+allowanceCreditForMonth(k)}
 function remaining(){return available()-spent()} function availableThisMonth(){return Math.max(0,allowanceLimit(monthKey())-spent(monthKey()))}
 function monthsInPlan(){return Math.max(1,Math.round(state.years*12))}
-function theoreticalMax(){return state.startingSavings+state.annualPay*state.years}
+function planEndDate(){if(!state.startDate)return "";const d=new Date(state.startDate+"T12:00:00");d.setMonth(d.getMonth()+monthsInPlan());return d.toISOString().slice(0,10)}
+function payRateForDate(date){const key=date instanceof Date?date.toISOString().slice(0,10):String(date||"").slice(0,10);let rate=Number(state.annualPay)||0;for(const x of state.payHistory||[]){if(x.effectiveDate<=key)rate=Number(x.annualPay)||0;else break}return rate}
+function planIncomeTotal(){if(!state.startDate)return (Number(state.annualPay)||0)*state.years;const start=new Date(state.startDate+"T12:00:00");let total=0;for(let i=0;i<monthsInPlan();i++){const d=new Date(start);d.setMonth(start.getMonth()+i);total+=payRateForDate(d)/12}return total}
+function theoreticalMax(){return state.startingSavings+planIncomeTotal()}
 function stashedTotal(){return (state.stashHistory||[]).reduce((a,x)=>a+(Number(x.amount)||0),0)}
-function projected(){let m=monthsInPlan();return state.startingSavings+(state.annualPay/12-planned()-state.flexible)*m+stashedTotal()}
-function essentialsOutcome(){let m=monthsInPlan();return state.startingSavings+(state.annualPay/12-planned())*m}
+function projected(){let m=monthsInPlan();return state.startingSavings+planIncomeTotal()-planned()*m-state.flexible*m+stashedTotal()}
+function essentialsOutcome(){let m=monthsInPlan();return state.startingSavings+planIncomeTotal()-planned()*m}
 function autoAllowance(){
   const m=monthsInPlan(), gap=essentialsOutcome()-state.target;
   return Math.max(0,gap/m);
 }
-function paycheckAmount(){return (Number(state.annualPay)||0)/(Number(state.paychecksPerYear)||12)}
+function paycheckAmount(date=new Date()){return payRateForDate(date)/(Number(state.paychecksPerYear)||12)}
 function render(tab="home"){
  ensurePaydayIncome();
  document.body.classList.toggle("dark",state.theme==="dark");
@@ -530,7 +553,8 @@ function plan(){
  <div class="card"><div class="row"><b>Current savings</b><b class="${change>=0?"cash-in":"spend-outflow"}">${change>=0?"↑":"↓"} ${euro(Math.abs(change))}</b></div><div class="big">${euro(current)}</div><div class="row small"><span>Started ${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span><span>Target ${euro(state.target)}</span></div><div class="muted">Current savings reflects your starting savings plus recorded income/profit, spending and stashed amounts.</div></div>
  <div class="card"><div class="muted">Projected finish</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Includes Essentials and your monthly allowance.</div></div>
  <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Assumes nothing extra is spent from your allowance.</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
- <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear>12?`12 monthly pay entries are automatic. ${state.paychecksPerYear-12} extra paycheck${state.paychecksPerYear-12===1?"":"s"} stay unassigned until you record them in Cash Flow.`:"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
+ <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>End date</span><b>${planEndDate()?new Date(planEndDate()+"T12:00:00").toLocaleDateString():"Not set"}</b></div><div class="row small"><span>Current annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear>12?`12 monthly pay entries are automatic. ${state.paychecksPerYear-12} extra paycheck${state.paychecksPerYear-12===1?"":"s"} stay unassigned until you record them in Cash Flow.`:"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
+ <div class="card"><div class="row"><b>Pay history</b><button class="secondary" onclick="addPayChange()">＋ Add pay change</button></div><div class="muted">Raises are applied from their effective date onward. Theoretical max, projected finish and future automatic paychecks use the rate that was active at each point in the plan.</div><div style="margin-top:10px">${(state.payHistory||[]).slice().reverse().map((x,ri)=>{const i=state.payHistory.length-1-ri;return `<div class="item"><div class="row"><span>${new Date(x.effectiveDate+"T12:00:00").toLocaleDateString()}</span><b>${euro(x.annualPay)}/yr</b></div>${i===state.payHistory.length-1?'<div class="muted small">Current rate</div>':''}<div style="text-align:right"><button class="icon delete trash-btn" onclick="removePayHistory(${i})" aria-label="Delete pay history entry">🗑</button></div></div>`}).join("")}</div></div>
  <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(state.flexible)}</b></div><div class="allowance-calc">${allowanceCalculationText()}</div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button></div>
  <div class="card"><div class="row"><b>Wallets</b><b>${euro(walletTotal())}</b></div><div class="muted">Wallets are earmarked balances and are included in Current Savings. Use them for gifts, holidays, car costs or anything you want to reserve.</div><div class="wallet-grid">${(state.wallets||[]).map(w=>`<div class="wallet-card"><div class="row"><span><b>${esc(w.name)}</b></span><b>${euro(w.balance)}</b></div><div class="wallet-actions"><button class="secondary" onclick="editWallet('${esc(w.id)}')">✎ Edit</button><button class="icon delete trash-btn" onclick="deleteWallet('${esc(w.id)}')" aria-label="Delete wallet">🗑</button></div></div>`).join("")||'<div class="empty">No wallets yet.</div>'}</div><button style="margin-top:10px" onclick="addWallet()">＋ Add wallet</button></div>
  <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div><div class="theme-choice ${state.theme==="flower"?"active":""}" onclick="setTheme('flower')"><span class="theme-icon">🌸</span>Flower</div><div class="theme-choice ${state.theme==="flower-dark"?"active":""}" onclick="setTheme('flower-dark')"><span class="theme-icon">🌙🌸</span>Flower Dark</div><div class="theme-choice ${state.theme==="red-dark"?"active":""}" onclick="setTheme('red-dark')"><span class="theme-icon">🌹</span>Red Dark</div></div></div>
@@ -868,8 +892,14 @@ function targetChangedAllowancePrompt(oldTarget,newTarget){
    state.flexible=suggested;
  }
 }
+function addPayChange(){
+ const today=new Date().toISOString().slice(0,10);
+ document.getElementById("sheet").innerHTML=`<h2>Add pay change</h2><div class="muted">Record a raise or other salary change without losing the previous rate.</div>${field("New annual income (€)","npc",state.annualPay,".01")}${field("Effective date","npd",today,"","date")}<button onclick="savePayChange()">Save pay change</button><button class="secondary" onclick="closeModal()">Cancel</button>`;
+ document.getElementById("modal").classList.add("open");
+}
+function savePayChange(){const amount=Math.max(0,Number(document.getElementById("npc").value)||0),date=document.getElementById("npd").value||new Date().toISOString().slice(0,10);upsertPayHistory(date,amount);save();closeModal();render("plan")}
 function settings(){
- document.getElementById("sheet").innerHTML=`<h2>Edit plan assumptions</h2><p class="muted">These values are stored locally on this device.</p>${field("Timeframe (years)","py",state.years,".5")}${field("Starting savings (€)","ps",state.startingSavings,".01")}${field("Project start date","pdate",state.startDate,"","date")}${field("Annual income (€)","pi",state.annualPay,".01")}${field("Target savings (€)","pt",state.target,".01")}${field("Paychecks per year","pp",state.paychecksPerYear,"1")}${field("Pay day (day of month)","pd",state.payDay,"1")}${field("Monthly allowance (€)","pf",state.flexible,".01")}<button onclick="saveSettings()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
+ document.getElementById("sheet").innerHTML=`<h2>Edit plan assumptions</h2><p class="muted">These values are stored locally on this device.</p>${field("Timeframe (years)","py",state.years,".5")}${field("Starting savings (€)","ps",state.startingSavings,".01")}${field("Project start date","pdate",state.startDate,"","date")}${field("Annual income (€)","pi",state.annualPay,".01")}${field("Pay effective date","ppdate",new Date().toISOString().slice(0,10),"","date")}<div class="muted small">If you change annual income, this date records when the new salary takes effect.</div>${field("Target savings (€)","pt",state.target,".01")}${field("Paychecks per year","pp",state.paychecksPerYear,"1")}${field("Pay day (day of month)","pd",state.payDay,"1")}${field("Monthly allowance (€)","pf",state.flexible,".01")}<button onclick="saveSettings()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
  document.getElementById("modal").classList.add("open")
 }
 function saveSettings(){
@@ -877,7 +907,10 @@ function saveSettings(){
  state.years=Number(document.getElementById("py").value)||1;
  state.startingSavings=Number(document.getElementById("ps").value)||0;
  state.startDate=document.getElementById("pdate").value||"";
- state.annualPay=Number(document.getElementById("pi").value)||0;
+ const newAnnualPay=Math.max(0,Number(document.getElementById("pi").value)||0);
+ const payEffectiveDate=document.getElementById("ppdate")?.value||new Date().toISOString().slice(0,10);
+ if(newAnnualPay!==Number(state.annualPay)||!state.payHistory.length)upsertPayHistory(payEffectiveDate,newAnnualPay);
+ else state.annualPay=newAnnualPay;
  state.target=Number(document.getElementById("pt").value)||0;
  state.paychecksPerYear=Math.max(1,Number(document.getElementById("pp").value)||12);
  state.payDay=Math.min(31,Math.max(1,Number(document.getElementById("pd").value)||1));
