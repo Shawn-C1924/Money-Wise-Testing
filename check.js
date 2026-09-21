@@ -1,5 +1,5 @@
 
-const DATA_VERSION="0.15";
+const DATA_VERSION="0.27";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:288,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -33,11 +33,11 @@ const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annual
   {person:"Child 1",occasion:"Christmas",amount:50},
   {person:"Child 2",occasion:"Birthday",amount:50},
   {person:"Child 2",occasion:"Christmas",amount:50}
-],weekendFood:173.33,general:100,transactions:[],carry:0,carryHistory:[],stashHistory:[],monthlyActions:{},dark:false,theme:"iconic",openMonths:{},customSections:[]};
+],weekendFood:173.33,general:100,transactions:[],carry:0,carryHistory:[],stashHistory:[],monthlyActions:{},incomeHistory:[],startDate:"",payDay:1,paychecksPerYear:12,hiddenBudgetSections:{},skippedPaychecks:{},autoBackup:true,backupIntervalMinutes:15,dark:false,theme:"iconic",openMonths:{},customSections:[],wallets:[],walletFunding:{},allowanceCredits:{}};
 let state;
 try{
   const saved=JSON.parse(localStorage.getItem("moneywise")||"null");
-  if(saved && ["0.11","0.12","0.13","0.14","0.15"].includes(String(saved.version))){
+  if(saved && /^0\.([1-9][0-9]*)$/.test(String(saved.version)) && Number(String(saved.version).split(".")[1])>=11 && Number(String(saved.version).split(".")[1])<=27){
     state={...structuredClone(DEFAULT),...saved,version:DATA_VERSION};
   }else{
     state=structuredClone(DEFAULT);
@@ -46,8 +46,100 @@ try{
   state=structuredClone(DEFAULT);
 }
 Object.keys(DEFAULT).forEach(k=>{if(state[k]===undefined)state[k]=structuredClone(DEFAULT[k])});if(!state.budgetOpen)state.budgetOpen={recurring:false,gifts:false,other:false};if(!state.customSections)state.customSections=[];
-if(!state.stashHistory)state.stashHistory=[];if(!state.monthlyActions)state.monthlyActions={};if(!state.theme)state.theme=state.dark?"dark":"iconic";
-function save(){localStorage.setItem("moneywise",JSON.stringify(state))}
+if(!state.stashHistory)state.stashHistory=[];if(!state.monthlyActions)state.monthlyActions={};if(!state.incomeHistory)state.incomeHistory=[];if(!state.skippedPaychecks)state.skippedPaychecks={};if(!state.hiddenBudgetSections)state.hiddenBudgetSections={};if(!state.skippedPaychecks)state.skippedPaychecks={};if(!state.payDay)state.payDay=1;if(!state.paychecksPerYear)state.paychecksPerYear=12;if(!state.theme)state.theme=state.dark?"dark":"iconic";
+if(!state.budgetDeduct)state.budgetDeduct={};
+if(!Array.isArray(state.wallets))state.wallets=[];
+if(!state.walletFunding)state.walletFunding={};
+if(!state.allowanceCredits)state.allowanceCredits={};
+state.wallets.forEach((w,i)=>{if(!w.id)w.id="wallet-"+Date.now()+"-"+i;if(!w.name)w.name="Wallet "+(i+1);if(w.balance===undefined)w.balance=0});
+if(state.recurring?.some(x=>x.deductOnPaycheck!==undefined)){state.budgetDeduct.recurring={onPaycheck:!!state.recurring.some(x=>x.deductOnPaycheck)};state.recurring.forEach(x=>delete x.deductOnPaycheck)}
+if(state.customSections)state.customSections.forEach((x,i)=>{if(x.deductOnPaycheck!==undefined){state.budgetDeduct["custom-"+i]={onPaycheck:!!x.deductOnPaycheck};delete x.deductOnPaycheck}});
+
+function backupTimestamp(){
+  const d=new Date();
+  return d.toLocaleString([], {year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+}
+function backupPayload(){
+  return {app:"MoneyWise",version:DATA_VERSION,exportedAt:new Date().toISOString(),state:structuredClone(state)};
+}
+function saveAutoBackup(){
+  try{
+    localStorage.setItem("moneywise_auto_backup",JSON.stringify(backupPayload()));
+    localStorage.setItem("moneywise_auto_backup_time",new Date().toISOString());
+  }catch(e){}
+}
+function autoBackup(){
+  if(state.autoBackup!==false)saveAutoBackup();
+}
+function downloadBackup(){
+  const payload=backupPayload();
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const stamp=new Date().toISOString().slice(0,10);
+  a.href=url;a.download=`MoneyWise_Backup_${stamp}.json`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function importBackupFile(){
+  const input=document.getElementById("backupFile");
+  if(input)input.click();
+}
+function handleBackupImport(input){
+  const file=input.files?.[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const payload=JSON.parse(reader.result);
+      const incoming=payload?.state;
+      if(!incoming || typeof incoming!=="object")throw new Error("Invalid backup");
+      if(!confirm("Restore this MoneyWise backup? Your current data will be replaced by the backup."))return;
+      state={...structuredClone(DEFAULT),...incoming,version:DATA_VERSION};
+      if(!state.stashHistory)state.stashHistory=[];
+      if(!state.monthlyActions)state.monthlyActions={};
+      if(!state.carryHistory)state.carryHistory=[];
+      if(!state.transactions)state.transactions=[];
+      if(!state.customSections)state.customSections=[];
+      if(!Array.isArray(state.wallets))state.wallets=[];
+      if(!state.walletFunding)state.walletFunding={};
+if(!state.allowanceCredits)state.allowanceCredits={};
+      if(!state.autoBackup && state.autoBackup!==false)state.autoBackup=true;
+      save();
+      alert("Backup restored successfully.");
+      render("home");
+    }catch(e){
+      alert("That file does not look like a valid MoneyWise backup.");
+    }finally{
+      input.value="";
+    }
+  };
+  reader.readAsText(file);
+}
+function backupInfo(){
+  let t=null;
+  try{t=localStorage.getItem("moneywise_auto_backup_time")}catch(e){}
+  return t?new Date(t).toLocaleString([], {year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):"Not created yet";
+}
+function openBackupSettings(){
+  document.getElementById("sheet").innerHTML=`<h2>Data backup</h2>
+  <div class="muted">MoneyWise keeps an automatic local snapshot while the app is in use. You can also export a file and keep it somewhere safe, such as iCloud Drive. Exported backups are the independent copy that protects you if Safari website data is cleared.</div>
+  <div class="backup-status"><b>Automatic local backup</b><span>${backupInfo()}</span></div>
+  <label class="backup-toggle"><input id="abToggle" type="checkbox" ${state.autoBackup!==false?"checked":""}> Keep automatic local backups</label>
+  <button onclick="saveBackupSettings()">Save settings</button>
+  <button class="secondary" onclick="downloadBackup()">⬇ Export backup</button>
+  <button class="secondary" onclick="importBackupFile()">⬆ Import backup</button>
+  <input id="backupFile" type="file" accept=".json,application/json" style="display:none" onchange="handleBackupImport(this)">
+  <div class="muted backup-note">Automatic snapshots update when you change data and periodically while MoneyWise is open. Safari/iOS does not allow a web app to reliably write a file to your storage in the background, so keep an exported backup for real disaster recovery.</div>`;
+  document.getElementById("modal").classList.add("open");
+}
+function saveBackupSettings(){
+  state.autoBackup=document.getElementById("abToggle").checked;
+  save();
+  closeModal();
+  render("plan");
+}
+function save(){localStorage.setItem("moneywise",JSON.stringify(state));autoBackup()}
 function euro(n){return new Intl.NumberFormat("en-IE",{style:"currency",currency:"EUR",maximumFractionDigits:2}).format(n)}
 function monthKey(d=new Date()){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")}
 function monthLabel(k){let [y,m]=k.split("-");return new Date(+y,+m-1,1).toLocaleString(undefined,{month:"long",year:"numeric"})}
@@ -63,28 +155,135 @@ function recurring(){
     return a+(x.frequency==="yearly"?amount/12:amount);
   },0);
 }
-function planned(){return recurring()+giftMonthly()+state.weekendFood+state.general+customSectionsMonthly()}
+function sectionEnabled(key){return !state.hiddenBudgetSections?.[key]}
+function planned(){
+  let total=0;
+  if(sectionEnabled("recurring"))total+=recurring();
+  if(sectionEnabled("gifts"))total+=giftMonthly();
+  (state.customSections||[]).forEach((x,i)=>{if(sectionEnabled("custom-"+i))total+=customSectionMonthly(x)});
+  return total;
+}
 function months(){let keys=[...new Set(state.transactions.map(x=>x.month))],now=monthKey();if(!keys.includes(now))keys.push(now);return keys.sort().reverse()}
 function txs(k=monthKey()){return state.transactions.filter(x=>x.month===k)}
-function spent(k=monthKey()){return txs(k).reduce((a,x)=>a+x.amount,0)}
-function available(){return state.flexible+state.carry}
-function remaining(){return available()-spent()}
+function expenses(k=monthKey()){return txs(k).filter(x=>x.type!=="income"&&x.type!=="transfer"&&!x.budgetSection)}
+function incomes(k=monthKey()){return txs(k).filter(x=>x.type==="income")}
+function spent(k=monthKey()){return expenses(k).reduce((a,x)=>a+(Number(x.amount)||0),0)}
+function incomeTotal(k=monthKey()){return incomes(k).reduce((a,x)=>a+(Number(x.amount)||0),0)}
+function netCashFlow(){return state.transactions.reduce((a,x)=>a+(x.type==="income"?1:x.type==="transfer"?0:-1)*(Number(x.amount)||0),0)}
+function currentSavings(){return state.startingSavings+netCashFlow()+stashedTotal()}
+function monthsElapsed(){if(!state.startDate)return 0;return Math.max(0,Math.min(monthsInPlan(),Math.floor((Date.now()-new Date(state.startDate).getTime())/(30.4375*86400000))))}
+function paydayDateForMonth(d=new Date()){
+  const y=d.getFullYear(),m=d.getMonth(),last=new Date(y,m+1,0).getDate();
+  return new Date(y,m,Math.min(Math.max(1,Number(state.payDay)||1),last));
+}
+function walletById(id){return (state.wallets||[]).find(w=>w.id===id)}
+function walletTotal(){return (state.wallets||[]).reduce((a,w)=>a+(Number(w.balance)||0),0)}
+function walletLabel(id){return walletById(id)?.name||"Select wallet"}
+function walletTransactionId(prefix,key,month=monthKey()){return `${prefix}-${key}-${month}`}
+function addWalletBalance(walletId,amount){const w=walletById(walletId);if(!w)return false;w.balance=Math.max(0,(Number(w.balance)||0)+(Number(amount)||0));return true}
+function removeWalletBalance(walletId,amount){const w=walletById(walletId);if(!w)return false;const a=Number(amount)||0;if(a>w.balance)return false;w.balance-=a;return true}
+function walletFundingEnabled(key){return !!state.walletFunding?.[key]?.enabled && !!walletById(state.walletFunding?.[key]?.walletId)}
+function fundBudgetWallet(key,month=monthKey(),forced=false){
+ const info=budgetSectionInfo(key);
+ if(!info || !sectionEnabled(key) || !walletFundingEnabled(key))return false;
+ const amount=Math.max(0,Number(info.amount)||0),walletId=state.walletFunding[key].walletId;
+ if(!amount || !walletById(walletId))return false;
+ const id=walletTransactionId("wallet-fund",key,month);
+ if(state.transactions.some(x=>x.id===id))return false;
+ addWalletBalance(walletId,amount);
+ state.transactions.push({id,month,desc:`Budget → ${walletLabel(walletId)} • ${info.title}`,amount,cat:"Wallet",type:"transfer",automatic:true,budgetSection:key,walletId,forced:!!forced});
+ return true;
+}
+function budgetSectionInfo(key){
+  if(key==="recurring")return {title:"Subscriptions / Recurring",amount:recurring()};
+  if(key==="gifts")return {title:"Gifts & occasions",amount:giftMonthly()};
+  const i=Number(String(key).replace("custom-","")),s=(state.customSections||[])[i];
+  return s?{title:s.name,amount:customSectionMonthly(s)}:null;
+}
+function budgetDeductionId(key,month=monthKey()){return `budget-deduct-${key}-${month}`}
+function deductBudgetSection(key,month=monthKey(),forced=false){
+  const info=budgetSectionInfo(key);
+  if(!info || !sectionEnabled(key))return false;
+  const amount=Math.max(0,Number(info.amount)||0);
+  if(!amount)return false;
+  const id=budgetDeductionId(key,month);
+  if(state.transactions.some(x=>x.id===id))return false;
+  state.transactions.push({id,month,desc:`Budget • ${info.title}`,amount,cat:"Budget",type:"expense",automatic:true,budgetSection:key,forced:!!forced});
+  return true;
+}
+function processPaycheckBudgetDeductions(month=monthKey()){
+  let changed=false;
+  ["recurring","gifts",...(state.customSections||[]).map((_,i)=>`custom-${i}`)].forEach(key=>{
+    if(walletFundingEnabled(key)) changed=fundBudgetWallet(key,month,false)||changed;
+    else if(state.budgetDeduct?.[key]?.onPaycheck) changed=deductBudgetSection(key,month,false)||changed;
+  });
+  if(changed)save();
+}
+function ensurePaydayIncome(){
+  const now=new Date(), pd=paydayDateForMonth(now);
+  if(now<pd)return;
+  const month=monthKey(now);
+  if(state.startDate && monthKey(new Date(state.startDate))>month)return;
+  const paychecks=Number(state.paychecksPerYear)||12;
+  const amount=Number(state.annualPay||0)/paychecks;
+  const id="pay-"+month;
+  if(!state.transactions.some(x=>x.id===id) && !state.skippedPaychecks[id]){
+    state.transactions.push({id,month,desc:"Pay",amount,cat:"Income",type:"income",automatic:true});
+    save();
+  }
+  if(!state.skippedPaychecks[id] && state.transactions.some(x=>x.id===id))processPaycheckBudgetDeductions(month);
+}
+function extraPaycheckCount(){return Math.max(0,(Number(state.paychecksPerYear)||12)-12)}
+function extraPaychecksForYear(year=new Date().getFullYear()){
+  const count=extraPaycheckCount(),out=[];
+  for(let n=1;n<=count;n++){
+    const tx=state.transactions.find(x=>x.id===`pay-extra-${year}-${n}` || (x.type==="income" && x.extraPaycheck===true && (Number(x.extraPaycheckNumber)||1)===n && new Date(x.date||x.month+"-01T12:00:00").getFullYear()===year));
+    out.push({number:n,recorded:!!tx,tx});
+  }
+  return out;
+}
+function recordExtraPaycheck(n){
+  const year=new Date().getFullYear(),status=extraPaychecksForYear(year).find(x=>x.number===n);
+  if(!status||status.recorded)return;
+  const amount=paycheckAmount();
+  if(!confirm(`Record extra paycheck ${n} of ${extraPaycheckCount()} as income for ${euro(amount)} in ${monthLabel(monthKey())}?\n\nIf you receive it in a different month, cancel and use Add income / profit instead.`))return;
+  state.transactions.push({id:`pay-extra-${year}-${n}`,month:monthKey(),desc:`Extra Pay ${n}`,amount,cat:"Income",type:"income",extraPaycheck:true,extraPaycheckNumber:n,manual:true});
+  save();render("cashflow");
+}
+function extraPaycheckSummary(){
+  const count=extraPaycheckCount();
+  if(!count)return "";
+  const items=extraPaychecksForYear();
+  return `<details class="card extra-paychecks-dropdown"><summary><div class="row"><b>Extra paychecks</b><span class="pill">${items.filter(x=>x.recorded).length}/${count} recorded</span></div></summary><div class="muted">You have ${count} paycheck${count===1?"":"s"} beyond the 12 regular monthly payments. These are not assigned to a month automatically.</div><div class="extra-pay-list">${items.map(x=>x.recorded?`<div class="row small"><span>Extra paycheck ${x.number}</span><span class="pill">Recorded</span></div>`:`<div class="row small"><span>Extra paycheck ${x.number}<br><span class="muted">${euro(paycheckAmount())}</span></span><button class="secondary" onclick="recordExtraPaycheck(${x.number})">＋ Record</button></div>`).join("")}</div></div>`;
+}
+function allowanceCreditForMonth(k=monthKey()){return Number(state.allowanceCredits?.[k]||0)}
+function available(){return (Number(state.flexible)||0)+state.carry+allowanceCreditForMonth()}
+function allowanceLimit(k=monthKey()){return (Number(state.flexible)||0)+(k===monthKey()?Number(state.carry)||0:0)+allowanceCreditForMonth(k)}
+function remaining(){return available()-spent()} function availableThisMonth(){return Math.max(0,allowanceLimit(monthKey())-spent(monthKey()))}
 function monthsInPlan(){return Math.max(1,Math.round(state.years*12))}
 function theoreticalMax(){return state.startingSavings+state.annualPay*state.years}
 function stashedTotal(){return (state.stashHistory||[]).reduce((a,x)=>a+(Number(x.amount)||0),0)}
 function projected(){let m=monthsInPlan();return state.startingSavings+(state.annualPay/12-planned()-state.flexible)*m+stashedTotal()}
 function essentialsOutcome(){let m=monthsInPlan();return state.startingSavings+(state.annualPay/12-planned())*m}
+function autoAllowance(){
+  const m=monthsInPlan(), gap=essentialsOutcome()-state.target;
+  return Math.max(0,gap/m);
+}
+function paycheckAmount(){return (Number(state.annualPay)||0)/(Number(state.paychecksPerYear)||12)}
 function render(tab="home"){
+ ensurePaydayIncome();
  document.body.classList.toggle("dark",state.theme==="dark");
  document.body.classList.toggle("iconic",state.theme==="iconic");
- let app=document.getElementById("app");app.innerHTML=tab==="home"?home():tab==="spend"?spend():tab==="budget"?budget():plan();
+ let app=document.getElementById("app");app.innerHTML=tab==="home"?home():tab==="cashflow"?cashflow():tab==="budget"?budget():plan();
  document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab))
 }
+
 function home(){
  let a=available(),r=remaining(),pct=a?Math.max(0,Math.min(100,spent()/a*100)):0;
  return `<div class="top"><div style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" style="width:36px;height:36px;border-radius:10px"><h1>MoneyWise</h1></div><div class="muted" style="margin-top:4px">${new Date().toLocaleString(undefined,{month:"long",year:"numeric"})}</div></div>
- <div class="card hero"><div class="muted">Available this month</div><div class="big">${euro(r)}</div><div class="progress"><div style="width:${pct}%"></div></div><div class="row small"><span>Spent ${euro(spent())}</span><span>Available ${euro(a)}</span></div><button onclick="openAdd()">＋ Add spending</button></div>
+ <div class="card hero tappable-card" role="button" tabindex="0" onclick="render('cashflow')" onkeydown="if(event.key==='Enter'||event.key===' ')render('cashflow')"><div class="muted">Available this month</div><div class="big">${euro(r)}</div><div class="progress"><div style="width:${pct}%"></div></div><div class="row small"><span>Spent ${euro(spent())}</span><span>Available ${euro(a)}</span></div><button onclick="openAdd('expense')">＋ Add spending</button></div>
  <div class="grid"><div class="metric"><span class="muted">Base allowance</span><b>${euro(state.flexible)}</b></div><div class="metric"><span class="muted">Carried in</span><b>${euro(state.carry)}</b></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div><div class="metric"><span class="muted">Projected</span><b>${euro(projected())}</b></div></div>
+ <div class="card"><div class="row"><b>Wallets</b><b>${euro(walletTotal())}</b></div><div class="muted">Reserved money available in your wallets.</div>${(state.wallets||[]).map(w=>`<div class="row small"><span>${esc(w.name)}</span><span>${euro(w.balance)}</span></div>`).join("")||'<div class="empty">Create wallets in Plan.</div>'}</div>
  <div class="card">
   <div class="row"><b>Unused allowance</b></div>
   <div class="muted" style="margin-bottom:10px">Choose what to do with money left at the end of the month.</div>
@@ -94,78 +293,182 @@ function home(){
     <button class="secondary" onclick="stashUnused()">Stash / save</button>
     <button class="secondary" onclick="carryPortionAndStash()">Carry portion + stash rest</button>
   </div>
-  ${state.carryHistory.length?`<div class="subhead">Carried</div>${state.carryHistory.slice().reverse().map((x,i)=>{let idx=state.carryHistory.length-1-i;return `<div class="item"><div class="row"><span>${monthLabel(x.from)} → ${monthLabel(x.to)}</span><b>${euro(x.amount)}</b></div><div style="text-align:right"><button class="icon" onclick="editCarry(${idx})" aria-label="Edit">✎</button><button class="icon delete" onclick="deleteCarry(${idx})" aria-label="Delete">⌫</button></div></div>`}).join("")}`:""}
-  ${state.stashHistory.length?`<div class="subhead">Stashed / saved → projected pool</div>${state.stashHistory.slice().reverse().map((x,i)=>{let idx=state.stashHistory.length-1-i;return `<div class="item"><div class="row"><span>${monthLabel(x.month)}</span><b>${euro(x.amount)}</b></div><div style="text-align:right"><button class="icon" onclick="editStash(${idx})" aria-label="Edit">✎</button><button class="icon delete" onclick="deleteStash(${idx})" aria-label="Delete">⌫</button></div></div>`}).join("")}`:""}
+  ${state.carryHistory.length?`<div class="subhead">Carried</div>${state.carryHistory.slice().reverse().map((x,i)=>{let idx=state.carryHistory.length-1-i;return `<div class="item"><div class="row"><span>${monthLabel(x.from)} → ${monthLabel(x.to)}</span><b>${euro(x.amount)}</b></div><div style="text-align:right"><button class="icon" onclick="editCarry(${idx})" aria-label="Edit">✎</button><button class="icon delete trash-btn" onclick="deleteCarry(${idx})" aria-label="Delete" class="trash-btn" aria-label="Delete">🗑<//button></div></div>`}).join("")}`:""}
+  ${state.stashHistory.length?`<div class="subhead">Stashed / saved → projected pool</div>${state.stashHistory.slice().reverse().map((x,i)=>{let idx=state.stashHistory.length-1-i;return `<div class="item"><div class="row"><span>${monthLabel(x.month)}</span><b>${euro(x.amount)}</b></div><div style="text-align:right"><button class="icon" onclick="editStash(${idx})" aria-label="Edit">✎</button><button class="icon delete trash-btn" onclick="deleteStash(${idx})" aria-label="Delete" class="trash-btn" aria-label="Delete">🗑<//button></div></div>`}).join("")}`:""}
   ${!state.carryHistory.length&&!state.stashHistory.length?'<div class="empty">No carry or stash records yet.</div>':''}
  </div>`;
 }
-function spend(){
- return `<div class="top"><h1>Spending</h1><div class="muted">Monthly breakdown</div></div>
- <div class="card hero"><div class="muted">Available this month</div><div class="big">${euro(available()-spent())}</div><div class="row small"><span>Base ${euro(state.flexible)}</span><span>Carried ${euro(state.carry)}</span><span>Spent ${euro(spent())}</span></div></div>
- <div class="card"><div class="row"><b>Planned Essentials</b><b>${euro(planned())}</b></div><div class="row small"><span>Recurring subscriptions & fixed costs</span><span>${euro(recurring())}</span></div><div class="row small"><span>Gifts</span><span>${euro(giftMonthly())}</span></div><div class="row small"><span>Food</span><span>${euro(state.weekendFood)}</span></div><div class="row small"><span>General</span><span>${euro(state.general)}</span></div><button class="secondary" onclick="editPlanned()">Edit additional allowance</button><button onclick="openAdd()">＋ Add spending</button></div>
- <div class="card">${months().map(k=>{let open=state.openMonths[k],total=spent(k),limit=state.flexible+(k===monthKey()?state.carry:0),diff=limit-total,cls=diff>=0?"under":"over",label=diff>=0?"Under limit":"Over limit";return `<div class="month-head ${cls}" onclick="toggleMonth('${k}')"><div class="row"><span><b>${monthLabel(k)}</b> <span class="status">${label}</span></span><span><b>${euro(total)}</b> ${open?"▲":"▼"}</span></div><div class="row small"><span>Available ${euro(limit)}</span><span>${diff>=0?euro(diff)+" left":euro(Math.abs(diff))+" over"}</span></div></div>${open?`<div>${txs(k).length?txs(k).map(x=>`<div class="item"><div class="row"><span>${esc(x.desc)} <span class="pill">${esc(x.cat)}</span></span><span>${euro(x.amount)}</span></div><div style="text-align:right"><button class="icon delete" onclick="delTx('${x.id}')">⌫</button></div></div>`).join(""):'<div class="empty">No spending recorded.</div>'}</div>`:""}`}).join("")}</div>`;
+function cashflow(){ return `<div class="top"><h1>Cash Flow</h1><div class="muted">Income, spending & monthly balance</div></div>
+ <div class="card hero" style="margin-bottom:12px">
+ <div class="muted">Available this month</div>
+ <div class="big">${euro(availableThisMonth())}</div>
+ <div class="progress"><div style="width:${(Number(state.flexible)||0)?Math.max(0,Math.min(100,spent(monthKey())/(Number(state.flexible)||0)*100)):0}%"></div></div>
+ <div class="row small"><span>Spent ${euro(spent(monthKey()))}</span><span>Limit ${euro(state.flexible||0)}</span></div>
+ </div>
+ <div class="card hero"><div class="muted">Current savings</div><div class="big">${euro(currentSavings())}</div><div class="row small"><span>Starting ${euro(state.startingSavings)}</span><span>Change ${euro(currentSavings()-state.startingSavings)}</span></div><div class="row small"><span>Wallets reserved</span><span>${euro(walletTotal())}</span></div></div>
+ <div class="card"><div class="row"><b>Monthly allowance</b><b>${euro(allowanceLimit(monthKey()))}</b></div><div class="row small"><span>Base allowance</span><span>${euro(state.flexible)}</span></div>${allowanceCreditForMonth()?`<div class="row small"><span>Income added</span><span>+${euro(allowanceCreditForMonth())}</span></div>`:""}<div class="row small"><span>Spent this month</span><span>${euro(spent())}</span></div><div class="row small"><span>Remaining</span><span>${euro(remaining())}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="openAdd('expense')">＋ Add spending</button><button class="secondary" onclick="openAdd('income')">＋ Add income / profit</button></div></div>
+ ${extraPaycheckSummary()}
+ <div class="card">${months().map(k=>{let open=state.openMonths[k],out=spent(k),inc=incomeTotal(k),limit=allowanceLimit(k),diff=limit-out,cls=diff>=0?"under":"over",label=diff>=0?"Under limit":"Over limit";return `<div class="month-head ${cls}" onclick="toggleMonth('${k}')"><div class="row"><span><b>${monthLabel(k)}</b> <span class="status">${label}</span></span><span><b>${euro(out)}</b> ${open?"▲":"▼"}</span></div><div class="row small"><span>Income ${euro(inc)}</span><span>${diff>=0?euro(diff)+" left":euro(Math.abs(diff))+" over"}</span></div></div>${open?`<div>${txs(k).length?txs(k).map(x=>`<div class="item"><div class="row"><span>${esc(x.desc)} <span class="pill">${esc(x.cat)}</span></span><span class="${x.type==="income"?"cash-in":"spend-outflow"}">${x.type==="income"?"↑":x.type==="transfer"?"→":"↓"} ${euro(x.amount)}</span></div><div style="text-align:right"><button class="icon delete trash-btn" onclick="event.stopPropagation();delTx('${x.id}')" class="trash-btn" aria-label="Delete">🗑<//button></div></div>`).join(""):'<div class="empty">No cash flow recorded.</div>'}</div>`:""}`}).join("")}</div>`;
+}
+
+function budgetDeductControls(key){
+ const enabled=!!state.budgetDeduct?.[key]?.onPaycheck;
+ const wf=state.walletFunding?.[key]||{};
+ const walletOn=walletFundingEnabled(key);
+ const info=budgetSectionInfo(key);
+ const wallets=state.wallets||[];
+ return `<div class="budget-deduct-box">
+   <div class="toggle"><div><b>Deduct on paycheck</b><div class="muted">Automatically deduct ${euro(info?.amount||0)} from savings when this month's paycheck is recorded.</div></div><div class="switch ${enabled&&!walletOn?"on":""}" onclick="toggleBudgetDeduct('${esc(key)}')" role="switch" aria-checked="${enabled&&!walletOn}"><i></i></div></div>
+   <button class="secondary force-deduct-btn" onclick="forceBudgetDeduct('${esc(key)}')">↻ ${walletOn?"Fund wallet this month":"Force deduct this month"}</button>
+   <div class="budget-wallet-box">
+    <div class="toggle"><div><b>Fund a wallet on paycheck</b><div class="muted">Move this section's monthly amount into a wallet instead of deducting it as a spent expense.</div></div><div class="switch ${walletOn?"on":""}" onclick="toggleBudgetWallet('${esc(key)}')" role="switch" aria-checked="${walletOn}"><i></i></div></div>
+    ${wallets.length?`<select class="wallet-select" onchange="setBudgetWallet('${esc(key)}',this.value)"><option value="">Choose wallet</option>${wallets.map(w=>`<option value="${esc(w.id)}" ${wf.walletId===w.id?"selected":""}>${esc(w.name)} — ${euro(w.balance)}</option>`).join("")}</select>`:`<div class="muted" style="margin-top:8px">Create a wallet in Plan to use this option.</div>`}
+   </div>
+ </div>`;
 }
 function budget(){
- const sections=[
-  {key:"recurring",title:"Subscriptions / Recurring",subtitle:"Subscriptions & fixed recurring costs",content:budgetRecurring(),total:euro(recurring())+"/mo"},
-  {key:"gifts",title:"Gifts & occasions",subtitle:"Birthdays, Christmas and other occasions",content:budgetGifts(),total:euro(giftMonthly())+"/mo"},
-  {key:"other",title:"Monthly Spending Budget / Fun Money",subtitle:"Weekend food and general monthly spending",content:budgetOther(),total:euro(state.weekendFood+state.general)+"/mo"}
- ];
- const custom=(state.customSections||[]).map((s,i)=>({key:"custom-"+i,title:s.name,subtitle:"Custom section",content:budgetCustom(i),total:euro(customSectionMonthly(s))+"/mo"}));
+ const sections=[];
+ if(sectionEnabled("recurring"))sections.push({key:"recurring",title:"Subscriptions / Recurring",subtitle:"Subscriptions & fixed recurring costs",content:budgetRecurring(),total:euro(recurring())+"/mo"});
+ if(sectionEnabled("gifts"))sections.push({key:"gifts",title:"Gifts & occasions",subtitle:"Birthdays, Christmas and other occasions",content:budgetGifts(),total:euro(giftMonthly())+"/mo"});
+ (state.customSections||[]).forEach((s,i)=>{if(sectionEnabled("custom-"+i))sections.push({key:"custom-"+i,title:s.name,subtitle:"Custom section",content:budgetCustom(i),total:euro(customSectionMonthly(s))+"/mo"})});
+ const hidden=Object.keys(state.hiddenBudgetSections||{}).length;
  return `<div class="top"><h1>Budget</h1><div class="muted">Essentials & planned costs</div></div>
  <div class="card budget-overview">
   <div class="row"><b>Total Essentials</b><b>${euro(planned())}/mo</b></div>
-  <div class="muted" style="margin-bottom:10px">This is the monthly amount planned across everything listed in the Budget below. The sections add up to this total.</div>
+  <div class="muted" style="margin-bottom:10px">This is your planned monthly cost for the sections you keep in the Budget. Your flexible lifestyle spending is handled by the Monthly Allowance in Plan.</div>
   <div class="budget-rundown">
-    <div class="row small"><span>Subscriptions / Recurring</span><b>${euro(recurring())}</b></div>
-    <div class="row small"><span>Gifts & occasions</span><b>${euro(giftMonthly())}</b></div>
-    <div class="row small"><span>Monthly Spending Budget / Fun Money</span><b>${euro(state.weekendFood+state.general)}</b></div>
-    ${(state.customSections||[]).map((s,i)=>`<div class="row small"><span>${esc(s.name)}</span><b>${euro(customSectionMonthly(s))}</b></div>`).join("")}
+    ${sections.map(s=>`<div class="row small"><span>${esc(s.title)}</span><b>${s.total.replace("/mo","")}</b></div>`).join("")}
     <div class="budget-rundown-total row"><b>Total</b><b>${euro(planned())}</b></div>
   </div>
-</div>
- ${sections.concat(custom).map(s=>`<div class="card budget-section">
+ </div>
+ ${sections.map(s=>`<div class="card budget-section">
    <button class="section-toggle" onclick="toggleBudgetSection('${esc(s.key)}')" aria-expanded="${state.budgetOpen?.[s.key]?'true':'false'}">
      <span><b>${esc(s.title)}</b><small>${esc(s.subtitle)}</small></span>
-     <span class="section-right"><b>${s.total}</b><span class="chevron">${state.budgetOpen?.[s.key]?'⌃':'⌄'}</span></span>
+     <span class="section-right"><b>${s.total}</b><span class="chevron">${state.budgetOpen?.[s.key]?'⌃':'⌄'}</span><span class="section-remove" onclick="event.stopPropagation();deleteBudgetSection('${esc(s.key)}')" title="Remove section" aria-label="Remove section" class="trash-btn" aria-label="Delete">🗑<//span></span>
    </button>
-   ${state.budgetOpen?.[s.key]?`<div class="section-body">${s.content}</div>`:''}
+   ${state.budgetOpen?.[s.key]?`<div class="section-body">${budgetDeductControls(s.key)}${s.content}</div>`:''}
  </div>`).join("")}
- <button onclick="addCustomSection()">＋ Add section</button>`;
+ ${hidden?`<button class="secondary" onclick="restoreBudgetSections()">↩ Restore removed sections</button>`:""}
+ <button class="add-section-btn" onclick="addCustomSection()">＋ Add section</button>`;
 }
 function budgetRecurring(){
- return `${state.recurring.length?state.recurring.map((x,i)=>`<div class="item"><div class="row"><span>${esc(x.name)}</span><span>${euro(x.frequency==="yearly"?Number(x.amount)/12:Number(x.amount))}/mo <button class="icon" onclick="editRecurring(${i})" aria-label="Edit">✎</button><button class="icon delete" onclick="deleteRecurring(${i})" aria-label="Delete">⌫</button></span></div></div>`).join(""):'<div class="empty">Add your recurring essentials.</div>'}<button onclick="addRecurring()">＋ Add recurring</button>`;
+ return `${state.recurring.length?state.recurring.map((x,i)=>`<div class="item"><div class="row"><span>${esc(x.name)}</span><span>${euro(x.frequency==="yearly"?Number(x.amount)/12:Number(x.amount))}/mo <button class="icon" onclick="editRecurring(${i})" aria-label="Edit">✎</button><button class="icon delete trash-btn" onclick="deleteRecurring(${i})" aria-label="Delete" class="trash-btn" aria-label="Delete">🗑<//button></span></div></div>`).join(""):'<div class="empty">Add your recurring essentials.</div>'}<button onclick="addRecurring()">＋ Add recurring</button>`;
 }
 function budgetGifts(){
- return `${Array.isArray(state.gifts)&&state.gifts.length?state.gifts.map((g,i)=>`<div class="item"><div class="row"><span>${esc(g.person)}<br><span class="muted">${esc(g.occasion)}</span></span><span style="display:flex;align-items:center;gap:6px"><span>${euro(g.amount)}</span><button class="icon" onclick="editGift(${i})" aria-label="Edit gift">✎</button><button class="icon delete" onclick="removeGiftDirect(${i})" aria-label="Delete gift">⌫</button></span></div></div>`).join(""):'<div class="empty">Add your gift occasions.</div>'}<button onclick="addGiftDirect()">＋ Add gift</button><button class="secondary" onclick="editGifts()">✎ Edit all gifts</button>`;
-}
-function budgetOther(){
- return `<div class="row small"><span>Weekend food</span><span>${euro(state.weekendFood)}</span></div><div class="row small"><span>General</span><span>${euro(state.general)}</span></div><button class="secondary" onclick="editOther()">✎ Edit</button>`;
+ return `${Array.isArray(state.gifts)&&state.gifts.length?state.gifts.map((g,i)=>`<div class="item"><div class="row"><span>${esc(g.person)}<br><span class="muted">${esc(g.occasion)}</span></span><span style="display:flex;align-items:center;gap:6px"><span>${euro(g.amount)}</span><button class="icon" onclick="editGift(${i})" aria-label="Edit gift">✎</button><button class="icon delete trash-btn" onclick="removeGiftDirect(${i})" aria-label="Delete gift" class="trash-btn" aria-label="Delete">🗑<//button></span></div></div>`).join(""):'<div class="empty">Add your gift occasions.</div>'}<button onclick="addGiftDirect()">＋ Add gift</button><button class="secondary" onclick="editGifts()">✎ Edit all gifts</button>`;
 }
 function budgetCustom(i){
  const s=state.customSections[i];
- return `${(s.items||[]).length?s.items.map((x,j)=>`<div class="item"><div class="row"><span>${esc(x.name)}</span><span>${euro(x.amount)}/mo <button class="icon" onclick="editCustomItem(${i},${j})" aria-label="Edit">✎</button><button class="icon delete" onclick="deleteCustomItem(${i},${j})" aria-label="Delete">⌫</button></span></div></div>`).join(""):'<div class="empty">No items yet.</div>'}
- <button onclick="addCustomItem(${i})">＋ Add item</button><button class="secondary" onclick="editCustomSection(${i})">✎ Rename</button><button class="icon delete" onclick="deleteCustomSection(${i})" aria-label="Delete section">⌫</button>`;
+ return `${(s.items||[]).length?s.items.map((x,j)=>`<div class="item"><div class="row"><span>${esc(x.name)}</span><span>${euro(customItemMonthly(x))}/mo <span class="muted">(${x.frequency==="yearly"?"yearly":"monthly"})</span> <button class="icon" onclick="editCustomItem(${i},${j})" aria-label="Edit">✎</button><button class="icon delete trash-btn" onclick="deleteCustomItem(${i},${j})" aria-label="Delete" class="trash-btn" aria-label="Delete">🗑<//button></span></div></div>`).join(""):'<div class="empty">No items yet.</div>'}
+ <button onclick="addCustomItem(${i})">＋ Add item</button><button class="secondary" onclick="editCustomSection(${i})">✎ Rename</button><button class="icon delete trash-btn" onclick="deleteCustomSection(${i})" aria-label="Delete section" class="trash-btn" aria-label="Delete">🗑<//button>`;
 }
-function customSectionMonthly(s){return (s.items||[]).reduce((a,x)=>a+(Number(x.amount)||0),0)}
+function customItemMonthly(x){return x.frequency==="yearly"?(Number(x.amount)||0)/12:(Number(x.amount)||0)}
+function customSectionMonthly(s){return (s.items||[]).reduce((a,x)=>a+customItemMonthly(x),0)}
 function customSectionsMonthly(){return (state.customSections||[]).reduce((a,s)=>a+customSectionMonthly(s),0)}
+
 function plan(){
- let m=monthsInPlan(),p=projected(),ess=essentialsOutcome();
+ let m=monthsInPlan(),p=projected(),ess=essentialsOutcome(),current=currentSavings(),change=current-state.startingSavings;
  return `<div class="top"><h1>Plan</h1><div class="muted">${state.years} year${state.years==1?"":"s"} • ${m} months</div></div>
- <div class="grid"><div class="metric"><span class="muted">Starting savings</span><b>${euro(state.startingSavings)}</b></div><div class="metric"><span class="muted">Annual income</span><b>${euro(state.annualPay)}</b></div><div class="metric"><span class="muted">Theoretical max</span><b>${euro(theoreticalMax())}</b></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div></div>
- <div class="card"><div class="muted">Projected finish</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Includes Essentials and your additional monthly allowance.</div></div>
- <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Assumes nothing extra is spent from the Spend section.</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
- <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Starting savings</span><span>${euro(state.startingSavings)}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Target</span><span>${euro(state.target)}</span></div><div class="row small"><span>Additional monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan</button></div>
- <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div></div></div>`;
+ <div class="grid"><div class="metric"><span class="muted">Starting savings</span><b>${euro(state.startingSavings)}</b></div><div class="metric"><span class="muted">Current savings</span><b>${euro(current)}</b></div><div class="metric"><span class="muted">Theoretical max</span><b>${euro(theoreticalMax())}</b></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div></div>
+ <div class="card"><div class="row"><b>Current savings</b><b class="${change>=0?"cash-in":"spend-outflow"}">${change>=0?"↑":"↓"} ${euro(Math.abs(change))}</b></div><div class="big">${euro(current)}</div><div class="row small"><span>Started ${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span><span>Target ${euro(state.target)}</span></div><div class="muted">Current savings reflects your starting savings plus recorded income/profit, spending and stashed amounts.</div></div>
+ <div class="card"><div class="muted">Projected finish</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Includes Essentials and your monthly allowance.</div></div>
+ <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Assumes nothing extra is spent from your allowance.</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
+ <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear>12?`12 monthly pay entries are automatic. ${state.paychecksPerYear-12} extra paycheck${state.paychecksPerYear-12===1?"":"s"} stay unassigned until you record them in Cash Flow.`:"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
+ <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(state.flexible)}</b></div><div class="allowance-calc">${allowanceCalculationText()}</div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button></div>
+ <div class="card"><div class="row"><b>Wallets</b><b>${euro(walletTotal())}</b></div><div class="muted">Wallets are earmarked balances and are included in Current Savings. Use them for gifts, holidays, car costs or anything you want to reserve.</div><div class="wallet-grid">${(state.wallets||[]).map(w=>`<div class="wallet-card"><div class="row"><span><b>${esc(w.name)}</b></span><b>${euro(w.balance)}</b></div><div class="wallet-actions"><button class="secondary" onclick="editWallet('${esc(w.id)}')">✎ Edit</button><button class="icon delete trash-btn" onclick="deleteWallet('${esc(w.id)}')" aria-label="Delete wallet">🗑</button></div></div>`).join("")||'<div class="empty">No wallets yet.</div>'}</div><button style="margin-top:10px" onclick="addWallet()">＋ Add wallet</button></div>
+ <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div></div></div>
+ <div class="card"><b>Data safety</b><div class="muted">Automatic local snapshot: ${backupInfo()}</div><button class="secondary" onclick="openBackupSettings()">💾 Backup & restore</button></div>`;
+}
+function editAllowance(){
+ document.getElementById("sheet").innerHTML=`<h2>Monthly allowance</h2><div class="muted">This is your flexible spending budget for food, takeaways, outings, entertainment and other lifestyle spending.</div>${field("Monthly allowance (€)","ea",state.flexible,".01")}<button onclick="saveAllowance()">Save allowance</button><button class="secondary" onclick="closeModal()">Cancel</button>`;
+ document.getElementById("modal").classList.add("open");
+}
+function saveAllowance(){state.flexible=Math.max(0,parseFloat(document.getElementById("ea").value)||0);save();closeModal();render("plan")}
+function allowanceCalculationText(){
+  const months=monthsInPlan();
+  const outcome=essentialsOutcome();
+  const target=Number(state.target)||0;
+  const available=Math.max(0,outcome-target);
+  const monthly=months?available/months:0;
+  return `Essentials-only outcome ${euro(outcome)} − target ${euro(target)} = ${euro(available)} available over ${months} months → ${euro(monthly)}/month allowance.`;
+}
+function autoAssignAllowance(){
+ const m=monthsInPlan(),availableForAllowance=Math.max(0,essentialsOutcome()-state.target),monthly=availableForAllowance/m,perPay=monthly*12/(Number(state.paychecksPerYear)||12);
+ if(!confirm(`This will alter your allowance so you can JUST meet your target.\n\nEssentials-only outcome: ${euro(essentialsOutcome())}\nTarget: ${euro(state.target)}\nMonths: ${m}\n\nNew monthly allowance: ${euro(monthly)}\nEquivalent per paycheck: ${euro(perPay)} (${state.paychecksPerYear} paychecks/year)\n\nDo you want to apply this allowance?`))return;
+ state.flexible=monthly;save();render("plan");
 }
 function showSetup(){
  document.getElementById("sheet").innerHTML=`<h2>Welcome to MoneyWise</h2><p class="muted">Enter your private planning assumptions. They are stored only on this device.</p>${field("Timeframe (years)","sy",2,".5")}${field("Starting savings (€)","ss","",".01")}${field("Annual income (€)","si",""," .01")}${field("Target savings (€)","st",""," .01")}${field("Additional monthly allowance (€)","sf",""," .01")}<button onclick="finishSetup()">Save private plan</button>`;
  document.getElementById("modal").classList.add("open")
 }
-function finishSetup(){state.years=Math.max(.5,parseFloat(document.getElementById("sy").value)||2);state.startingSavings=Math.max(0,parseFloat(document.getElementById("ss").value)||0);state.annualPay=Math.max(0,parseFloat(document.getElementById("si").value)||0);state.target=Math.max(0,parseFloat(document.getElementById("st").value)||0);state.flexible=Math.max(0,parseFloat(document.getElementById("sf").value)||0);state.configured=true;save();closeModal();render("home")}
-function openAdd(){document.getElementById("sheet").innerHTML=`<h2>Add spending</h2><label>Description</label><input id="desc" placeholder="e.g. Dinner"><label>Amount (€)</label><input id="amount" type="number" step=".01"><label>Category</label><select id="cat"><option>General</option><option>Food</option><option>Entertainment</option><option>Clothes</option><option>Transport</option><option>Gifts</option><option>Holiday</option><option>Other</option></select><button onclick="addTx()">Add</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;document.getElementById("modal").classList.add("open")}
-function addTx(){let desc=document.getElementById("desc").value.trim()||"Spending",amount=parseFloat(document.getElementById("amount").value);if(!amount||amount<=0)return alert("Enter a valid amount.");state.transactions.push({id:Date.now().toString(),month:monthKey(),desc,amount,cat:document.getElementById("cat").value});save();closeModal();render("spend")}
-function delTx(id){state.transactions=state.transactions.filter(x=>x.id!==id);save();render("spend")}
+function finishSetup(){state.years=Math.max(.5,parseFloat(document.getElementById("sy").value)||2);state.startingSavings=Math.max(0,parseFloat(document.getElementById("ss").value)||0);state.annualPay=Math.max(0,parseFloat(document.getElementById("si").value)||0);state.target=Math.max(0,parseFloat(document.getElementById("st").value)||0);state.flexible=Math.max(0,parseFloat(document.getElementById("sf").value)||0);state.configured=true;state.startDate=state.startDate||new Date().toISOString().slice(0,10);save();closeModal();render("home")}
+function openAdd(type="expense"){
+  const income=type==="income", wallets=state.wallets||[];
+  const catHtml=income?`<option>Income</option><option>Side hustle</option><option>Other</option>`:`<option>General</option><option>Food</option><option>Entertainment</option><option>Clothes</option><option>Transport</option><option>Gifts</option><option>Holiday</option><option>Other</option>`;
+  let destinationHtml="";
+  if(income){
+    const walletOptions=wallets.map(w=>`<option value="${esc(w.id)}">${esc(w.name)} — ${euro(w.balance)}</option>`).join("");
+    destinationHtml=`<label>Where should this money go?</label><select id="incomeDest" onchange="updateIncomeDestination()"><option value="savings">Savings only</option><option value="allowance">Savings + add to allowance</option><option value="wallet">Savings + add to wallet</option></select><div id="walletDestBox" style="display:none"><label>Wallet</label><select id="incomeWallet">${walletOptions}</select>${wallets.length?"":"<div class=\"muted\">Create a wallet in Plan first.</div>"}</div>`;
+  }else if(wallets.length){
+    const walletOptions=wallets.map(w=>`<option value="${esc(w.id)}">${esc(w.name)} — ${euro(w.balance)}</option>`).join("");
+    destinationHtml=`<label>Spending source</label><select id="spendSource" onchange="updateSpendingSource()"><option value="allowance">Monthly allowance</option><option value="wallet">Wallet</option></select><div id="spendWalletBox" style="display:none"><label>Wallet</label><select id="spendWallet">${walletOptions}</select></div>`;
+  }
+  document.getElementById("sheet").innerHTML=`<h2>${income?"Add income / profit":"Add spending"}</h2><label>Description</label><input id="desc" placeholder="${income?"e.g. Side hustle":"e.g. Dinner"}"><label>Amount (€)</label><input id="amount" type="number" step=".01"><label>Category</label><select id="cat">${catHtml}</select>${destinationHtml}<button onclick="addTx('${income?"income":"expense"}')">Add</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
+  document.getElementById("modal").classList.add("open")
+}
+function updateIncomeDestination(){const d=document.getElementById("incomeDest")?.value;const box=document.getElementById("walletDestBox");if(box)box.style.display=d==="wallet"?"block":"none"}
+function updateSpendingSource(){const d=document.getElementById("spendSource")?.value;const box=document.getElementById("spendWalletBox");if(box)box.style.display=d==="wallet"?"block":"none"}
+function addTx(type="expense"){
+  let desc=document.getElementById("desc").value.trim()||(type==="income"?"Income":"Spending"),amount=parseFloat(document.getElementById("amount").value);
+  if(!amount||amount<=0)return alert("Enter a valid amount.");
+  const month=monthKey();
+  if(type==="income"){
+    const dest=document.getElementById("incomeDest")?.value||"savings",walletId=document.getElementById("incomeWallet")?.value;
+    if(dest==="wallet" && !walletById(walletId))return alert("Choose a valid wallet.");
+    state.transactions.push({id:Date.now().toString(),month,desc,amount,cat:document.getElementById("cat").value,type:"income",incomeDestination:dest,walletId:dest==="wallet"?walletId:undefined,allowanceCredit:dest==="allowance"});
+    if(dest==="allowance"){state.allowanceCredits=state.allowanceCredits||{};state.allowanceCredits[month]=(Number(state.allowanceCredits[month])||0)+amount;}
+    if(dest==="wallet")addWalletBalance(walletId,amount);
+  }else{
+    const source=document.getElementById("spendSource")?.value||"allowance",walletId=document.getElementById("spendWallet")?.value;
+    if(source==="wallet"){const w=walletById(walletId);if(!w)return alert("Choose a valid wallet.");if(amount>(Number(w.balance)||0))return alert(`That wallet only has ${euro(w.balance)} available.`);removeWalletBalance(walletId,amount);state.transactions.push({id:Date.now().toString(),month,desc,amount,cat:document.getElementById("cat").value,type:"expense",walletId,fromWallet:true});}
+    else state.transactions.push({id:Date.now().toString(),month,desc,amount,cat:document.getElementById("cat").value,type:"expense"});
+  }
+  save();closeModal();render("cashflow")
+}
+function delTx(id){
+  const tx=state.transactions.find(x=>x.id===id);
+  if(!tx)return;
+  if(tx.automatic && tx.budgetSection && tx.type==="transfer"){
+    if(!confirm("This is an automatic wallet funding entry. Delete it and remove that amount from the wallet?"))return;
+    removeWalletBalance(tx.walletId,tx.amount);
+  }else if(tx.type==="income" && tx.incomeDestination==="wallet"){
+    if(!confirm("This income was added to a wallet. Delete it and remove that amount from the wallet?"))return;
+    removeWalletBalance(tx.walletId,tx.amount);
+  }else if(tx.type==="income" && tx.allowanceCredit){
+    if(!confirm("This income increased this month's allowance. Delete it and remove that allowance credit?"))return;
+    state.allowanceCredits=state.allowanceCredits||{};state.allowanceCredits[tx.month]=Math.max(0,(Number(state.allowanceCredits[tx.month])||0)-Number(tx.amount||0));
+  }else if(tx.type==="expense" && tx.fromWallet){
+    if(!confirm("This spending came from a wallet. Delete it and restore the amount to the wallet?"))return;
+    addWalletBalance(tx.walletId,tx.amount);
+  }else if(tx.automatic){
+    if(!confirm("This is an automatic pay entry. Delete it and stop MoneyWise from adding it again for this payday?"))return;
+    state.skippedPaychecks[id]=true;
+  }
+  state.transactions=state.transactions.filter(x=>x.id!==id);save();render("cashflow")
+}
+function deleteBudgetSection(key){
+  const labels={recurring:"Subscriptions / Recurring",gifts:"Gifts & occasions"};
+  const label=labels[key]||((state.customSections||[])[Number(String(key).replace("custom-",""))]?.name||"this section");
+  if(confirm(`Remove "${label}" from the Budget? Its data will be kept but excluded from your Essentials calculation.`)){
+    state.hiddenBudgetSections=state.hiddenBudgetSections||{};
+    state.hiddenBudgetSections[key]=true;
+    save();render("budget");
+  }
+}
+function restoreBudgetSections(){
+  state.hiddenBudgetSections={};
+  save();render("budget");
+}
 function monthlyActionLogged(kind,month=monthKey()){
   return state.monthlyActions?.[month]?.kind===kind;
 }
@@ -233,9 +536,26 @@ function deleteStash(i){
     state.stashHistory.splice(i,1);save();render("home");
   }
 }
-function toggleMonth(k){state.openMonths[k]=!state.openMonths[k];save();render("spend")}
+function toggleMonth(k){state.openMonths[k]=!state.openMonths[k];save();render("cashflow")}
 function editPlanned(){document.getElementById("sheet").innerHTML=`<h2>Additional allowance</h2><div class="muted">This is money available for spending from the Spend section.</div>${field("Monthly allowance (€)","fa",state.flexible,".01")}<button onclick="saveFlex()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;document.getElementById("modal").classList.add("open")}
-function saveFlex(){state.flexible=Math.max(0,parseFloat(document.getElementById("fa").value)||0);save();closeModal();render("spend")}
+function saveFlex(){state.flexible=Math.max(0,parseFloat(document.getElementById("fa").value)||0);save();closeModal();render("cashflow")}
+function addWallet(){
+ document.getElementById("sheet").innerHTML=`<h2>Add wallet</h2>${field("Wallet name","wn","","","text")}<button onclick="saveNewWallet()">Create wallet</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;document.getElementById("modal").classList.add("open");
+}
+function saveNewWallet(){const name=document.getElementById("wn").value.trim();if(!name)return alert("Enter a wallet name.");state.wallets.push({id:"wallet-"+Date.now(),name,balance:0});save();closeModal();render("plan")}
+function editWallet(id){const w=walletById(id);if(!w)return;document.getElementById("sheet").innerHTML=`<h2>Edit wallet</h2>${field("Wallet name","wn",w.name,"","text")}${field("Balance (€)","wb",w.balance,".01")}<div class="muted">Changing the balance here is a manual correction; it does not create a cash-flow entry.</div><button onclick="saveWallet('${esc(id)}')">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;document.getElementById("modal").classList.add("open")}
+function saveWallet(id){const w=walletById(id);if(!w)return;const n=document.getElementById("wn").value.trim();const b=Math.max(0,parseFloat(document.getElementById("wb").value)||0);if(!n)return alert("Enter a wallet name.");w.name=n;w.balance=b;save();closeModal();render("plan")}
+function deleteWallet(id){const w=walletById(id);if(!w)return;if((Number(w.balance)||0)>0)return alert("Empty the wallet before deleting it.");if(confirm(`Delete wallet \"${w.name}\"?`)){state.wallets=state.wallets.filter(x=>x.id!==id);Object.keys(state.walletFunding||{}).forEach(k=>{if(state.walletFunding[k]?.walletId===id)state.walletFunding[k]={enabled:false,walletId:""}});save();render("plan")}}
+function toggleBudgetWallet(key){
+ state.walletFunding=state.walletFunding||{};const current=state.walletFunding[key]||{};
+ if(!(state.wallets||[]).length)return alert("Create a wallet in Plan first.");
+ const next=!current.enabled;
+ if(next && !walletById(current.walletId))current.walletId=state.wallets[0].id;
+ state.walletFunding[key]={...current,enabled:next};
+ if(next){state.budgetDeduct[key]={...(state.budgetDeduct[key]||{}),onPaycheck:false};}
+ save();render("budget");
+}
+function setBudgetWallet(key,walletId){state.walletFunding=state.walletFunding||{};state.walletFunding[key]={...(state.walletFunding[key]||{}),walletId};if(walletId)state.walletFunding[key].enabled=true;save();render("budget")}
 function addRecurring(){editRecurring(-1)}
 function editRecurring(i){
   let x=i>=0?state.recurring[i]:{name:"",amount:0,frequency:"monthly"};
@@ -260,6 +580,29 @@ function toggleBudgetSection(key){
   state.budgetOpen[key]=!state.budgetOpen[key];
   save();render("budget");
 }
+function toggleBudgetDeduct(key){
+  state.budgetDeduct=state.budgetDeduct||{};
+  const next=!state.budgetDeduct[key]?.onPaycheck;
+  state.budgetDeduct[key]={...(state.budgetDeduct[key]||{}),onPaycheck:next};
+  if(next && state.walletFunding?.[key])state.walletFunding[key].enabled=false;
+  save();render("budget");
+}
+function forceBudgetDeduct(key){
+  const info=budgetSectionInfo(key);
+  if(!info)return;
+  if(walletFundingEnabled(key)){
+    const month=monthKey(),id=walletTransactionId("wallet-fund",key,month);
+    if(state.transactions.some(x=>x.id===id))return alert(`${info.title} has already funded ${walletLabel(state.walletFunding[key].walletId)} for ${monthLabel(month)}.`);
+    if(!confirm(`Fund ${walletLabel(state.walletFunding[key].walletId)} with ${euro(info.amount)} for ${monthLabel(month)}?`))return;
+    if(fundBudgetWallet(key,month,true)){save();render("budget");}
+    return;
+  }
+  const month=monthKey(),id=budgetDeductionId(key,month);
+  if(state.transactions.some(x=>x.id===id))return alert(`${info.title} has already been deducted for ${monthLabel(month)}.`);
+  if(!confirm(`Force deduct ${euro(info.amount)} for ${info.title} from savings for ${monthLabel(month)}?`))return;
+  if(deductBudgetSection(key,month,true)){save();render("budget");}
+}
+
 function addCustomSection(){
   state.customSections=state.customSections||[];
   state.customSections.push({name:"New section",items:[]});
@@ -283,14 +626,14 @@ function deleteCustomSection(i){
 }
 function addCustomItem(i){editCustomItem(i,-1)}
 function editCustomItem(i,j){
-  const x=j>=0?state.customSections[i].items[j]:{name:"",amount:0};
-  document.getElementById("sheet").innerHTML=`<h2>${j>=0?"Edit":"Add"} item</h2>${field("Name","cin",x.name,"","text")}${field("Monthly amount (€)","cia",x.amount,".01")}<button onclick="saveCustomItem(${i},${j})">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
+  const x=j>=0?state.customSections[i].items[j]:{name:"",amount:0,frequency:"monthly"};
+  document.getElementById("sheet").innerHTML=`<h2>${j>=0?"Edit":"Add"} item</h2>${field("Name","cin",x.name,"","text")}${field("Amount (€)","cia",x.amount,".01")}<label>Frequency</label><select id="cif"><option value="monthly" ${x.frequency!=="yearly"?"selected":""}>Monthly</option><option value="yearly" ${x.frequency==="yearly"?"selected":""}>Yearly</option></select><button onclick="saveCustomItem(${i},${j})">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
   document.getElementById("modal").classList.add("open");
 }
 function saveCustomItem(i,j){
-  const n=document.getElementById("cin").value.trim(),a=Math.max(0,parseFloat(document.getElementById("cia").value)||0);
+  const n=document.getElementById("cin").value.trim(),a=Math.max(0,parseFloat(document.getElementById("cia").value)||0),frequency=document.getElementById("cif").value;
   if(!n)return;
-  const item={name:n,amount:a};
+  const item={name:n,amount:a,frequency};
   if(j>=0)state.customSections[i].items[j]=item;else state.customSections[i].items.push(item);
   save();closeModal();render("budget");
 }
@@ -337,7 +680,7 @@ function giftEditorRow(g,i){
     </div>
     <div class="row" style="margin-top:8px">
       <label style="margin:0">Amount (€)</label>
-      <span style="display:flex;gap:8px;align-items:center"><input id="gm-${i}" type="number" min="0" step=".01" value="${Number(g.amount)||0}" style="max-width:120px"><button class="icon delete" onclick="removeGift(${i})" aria-label="Delete gift">⌫</button></span>
+      <span style="display:flex;gap:8px;align-items:center"><input id="gm-${i}" type="number" min="0" step=".01" value="${Number(g.amount)||0}" style="max-width:120px"><button class="icon delete trash-btn" onclick="removeGift(${i})" aria-label="Delete gift" class="trash-btn" aria-label="Delete">🗑<//button></span>
     </div>
   </div>`
 }
@@ -361,14 +704,48 @@ function saveGifts(){
   state.gifts=rows;
   save();closeModal();render("budget")
 }
-function editOther(){document.getElementById("sheet").innerHTML=`<h2>Monthly Spending Budget / Fun Money</h2>${field("Weekend food (€ / month)","wf",state.weekendFood,".01")}${field("General (€ / month)","ge",state.general,".01")}<button onclick="saveOther()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;document.getElementById("modal").classList.add("open")}
-function saveOther(){state.weekendFood=Math.max(0,parseFloat(document.getElementById("wf").value)||0);state.general=Math.max(0,parseFloat(document.getElementById("ge").value)||0);save();closeModal();render("budget")}
-function settings(){document.getElementById("sheet").innerHTML=`<h2>Edit plan</h2><p class="muted">These values are stored locally on this device.</p>${field("Timeframe (years)","py",state.years,".5")}${field("Starting savings (€)","ps",state.startingSavings,".01")}${field("Annual income (€)","pi",state.annualPay,".01")}${field("Target savings (€)","pt",state.target,".01")}${field("Additional monthly allowance (€)","pf",state.flexible,".01")}<button onclick="saveSettings()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;document.getElementById("modal").classList.add("open")}
-function saveSettings(){state.years=Math.max(.5,parseFloat(document.getElementById("py").value)||2);state.startingSavings=Math.max(0,parseFloat(document.getElementById("ps").value)||0);state.annualPay=Math.max(0,parseFloat(document.getElementById("pi").value)||0);state.target=Math.max(0,parseFloat(document.getElementById("pt").value)||0);state.flexible=Math.max(0,parseFloat(document.getElementById("pf").value)||0);save();closeModal();render("plan")}
+function targetChangedAllowancePrompt(oldTarget,newTarget){
+ if(Number(oldTarget)===Number(newTarget))return;
+ const months=monthsInPlan(),outcome=essentialsOutcome(),suggested=Math.max(0,(outcome-Number(newTarget))/months),perPay=suggested*12/(Number(state.paychecksPerYear)||12);
+ if(confirm(`Hey — you changed your target to ${euro(newTarget)}.\n\nAuto Assign can adjust your allowance to ${euro(suggested)}/month so the new target is met.\n\nEquivalent per paycheck: ${euro(perPay)}\n\nChange allowance to ${euro(suggested)}?\n\nOK = Auto Assign new allowance\nCancel = keep current allowance`)){
+   state.flexible=suggested;
+ }
+}
+function settings(){
+ document.getElementById("sheet").innerHTML=`<h2>Edit plan assumptions</h2><p class="muted">These values are stored locally on this device.</p>${field("Timeframe (years)","py",state.years,".5")}${field("Starting savings (€)","ps",state.startingSavings,".01")}${field("Project start date","pdate",state.startDate,"","date")}${field("Annual income (€)","pi",state.annualPay,".01")}${field("Target savings (€)","pt",state.target,".01")}${field("Paychecks per year","pp",state.paychecksPerYear,"1")}${field("Pay day (day of month)","pd",state.payDay,"1")}${field("Monthly allowance (€)","pf",state.flexible,".01")}<button onclick="saveSettings()">Save</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
+ document.getElementById("modal").classList.add("open")
+}
+function saveSettings(){
+ const oldTarget=Number(state.target)||0;
+ state.years=Number(document.getElementById("py").value)||1;
+ state.startingSavings=Number(document.getElementById("ps").value)||0;
+ state.startDate=document.getElementById("pdate").value||"";
+ state.annualPay=Number(document.getElementById("pi").value)||0;
+ state.target=Number(document.getElementById("pt").value)||0;
+ state.paychecksPerYear=Math.max(1,Number(document.getElementById("pp").value)||12);
+ state.payDay=Math.min(31,Math.max(1,Number(document.getElementById("pd").value)||1));
+ state.flexible=Math.max(0,Number(document.getElementById("pf").value)||0);
+ targetChangedAllowancePrompt(oldTarget,state.target);
+ save();
+ closeModal();
+ render("plan");
+}
 function field(label,id,val,step=".01",type="number"){return `<label>${label}</label><input id="${id}" type="${type}" ${type==="number"?"min=\"0\" step=\""+step+"\"":""} value="${val===undefined?"":esc(val)}">`}
 function setTheme(t){state.theme=t;state.dark=t==="dark";save();render("plan")}
 function toggleEssentials(){state.showEssentialsOutcome=!state.showEssentialsOutcome;save();render("plan")}
 function closeModal(){document.getElementById("modal").classList.remove("open")}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 document.querySelectorAll(".nav button").forEach(b=>b.addEventListener("click",()=>render(b.dataset.tab)));
-render("home");/* Baseline loads directly; setup remains optional through editing. */
+render("home");
+startAutoBackupTimer();
+if(state?.autoBackup!==false)saveAutoBackup();
+/* Baseline loads directly; setup remains optional through editing. */
+
+let autoBackupTimer=null;
+function startAutoBackupTimer(){
+  if(autoBackupTimer)clearInterval(autoBackupTimer);
+  autoBackupTimer=setInterval(()=>{
+    if(state?.autoBackup!==false)saveAutoBackup();
+  },(Number(state?.backupIntervalMinutes)||15)*60*1000);
+}
+window.addEventListener("beforeunload",()=>{if(state?.autoBackup!==false)saveAutoBackup()});

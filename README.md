@@ -33,3 +33,20 @@ Host the static files on GitHub Pages or another HTTPS static host. On iPhone, o
 Each Budget section can optionally be set to **Deduct on paycheck**. When the configured paycheck is recorded, MoneyWise creates one monthly Budget deduction for that section and includes it in current savings/cash flow without consuming the flexible Monthly Allowance.
 
 A **Force deduct this month** control is also available for manual recovery if an automatic deduction was missed. Deductions are idempotent per section and month, so reopening the app does not create duplicates.
+
+
+### v0.27
+- Added wallets as earmarked balances included in Current Savings.
+- Added wallet management in Plan and a wallet summary on Home.
+- Added budget option to fund a selected wallet automatically on payday, with force-fund support.
+- Budget wallet funding replaces the section's automatic savings deduction to avoid double-counting.
+- Cash Flow income can go to Savings only, Savings + current-month allowance, or Savings + a wallet.
+- Cash Flow spending can optionally come directly from a wallet.
+- Wallet transfers are shown separately in Cash Flow and do not count against allowance.
+- Added allowance credits so income added to allowance affects the current month only.
+
+
+### v0.28
+- Added a Flower theme with a soft pink/floral palette.
+- Added Flower theme selection under Plan → Appearance.
+- Updated the iOS/browser theme color when Flower theme is selected.
