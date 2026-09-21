@@ -27,3 +27,9 @@ Host the static files on GitHub Pages or another HTTPS static host. On iPhone, o
 - `sw.js` — offline cache
 - `icon-192.png` / `icon-512.png` — Home Screen icons
 - `README.md` — project documentation
+
+## Budget deductions
+
+Each Budget section can optionally be set to **Deduct on paycheck**. When the configured paycheck is recorded, MoneyWise creates one monthly Budget deduction for that section and includes it in current savings/cash flow without consuming the flexible Monthly Allowance.
+
+A **Force deduct this month** control is also available for manual recovery if an automatic deduction was missed. Deductions are idempotent per section and month, so reopening the app does not create duplicates.
