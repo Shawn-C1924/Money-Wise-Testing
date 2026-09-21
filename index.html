@@ -18,6 +18,16 @@ body.flower .hero{background:linear-gradient(135deg,#b92f68,#e45f91 58%,#f08ab0)
 body.flower .hero .muted{color:#ffe8f1}
 body.flower .hero .progress{background:#ffffff40}
 body.flower .hero .progress>div{background:#fff1f7}
+body.flower-dark{--bg:#1a0d14;--card:#29131e;--text:#fff0f6;--muted:#c69aaa;--line:#4a2637;--soft:#351a28;--accent:#f17aaa;--accent2:#d95588;--gold:#f0c36a;--danger:#ff7d91;--dangerbg:#4a1d2b;--shadow:0 10px 30px rgba(0,0,0,.28)}
+body.flower-dark .hero{background:linear-gradient(135deg,#7e244d,#b43e70 58%,#db6b98)}
+body.flower-dark .hero .muted{color:#ffe0ec}
+body.flower-dark .hero .progress{background:#ffffff25}
+body.flower-dark .hero .progress>div{background:#ffe7f0}
+body.red-dark{--bg:#140a0a;--card:#241212;--text:#fff1f1;--muted:#c49a9a;--line:#472424;--soft:#321818;--accent:#ff626b;--accent2:#d83e49;--gold:#efc15d;--danger:#ff7b83;--dangerbg:#481b20;--shadow:0 10px 30px rgba(0,0,0,.3)}
+body.red-dark .hero{background:linear-gradient(135deg,#76191f,#ad2e38 58%,#df4c58)}
+body.red-dark .hero .muted{color:#ffe1e3}
+body.red-dark .hero .progress{background:#ffffff25}
+body.red-dark .hero .progress>div{background:#ffe6e7}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
 .app{max-width:520px;margin:auto;min-height:100vh;padding-bottom:96px}.top{padding:calc(env(safe-area-inset-top) + 20px) 18px 15px;background:linear-gradient(135deg,var(--card),color-mix(in srgb,var(--card) 76%,var(--accent) 24%));position:sticky;top:0;z-index:3;border-bottom:1px solid var(--line)}
 h1{font-size:28px;letter-spacing:-.7px;margin:0}.muted{color:var(--muted);font-size:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:17px;margin:13px 14px;box-shadow:var(--shadow)}
@@ -418,7 +428,9 @@ function render(tab="home"){
  document.body.classList.toggle("dark",state.theme==="dark");
  document.body.classList.toggle("iconic",state.theme==="iconic");
  document.body.classList.toggle("flower",state.theme==="flower");
- const themeMeta=document.querySelector('meta[name="theme-color"]'); if(themeMeta) themeMeta.content=state.theme==="flower"?"#b92f68":state.theme==="dark"?"#07120e":state.theme==="iconic"?"#064e3b":"#f3f6f4";
+ document.body.classList.toggle("flower-dark",state.theme==="flower-dark");
+ document.body.classList.toggle("red-dark",state.theme==="red-dark");
+ const themeMeta=document.querySelector('meta[name="theme-color"]'); if(themeMeta) themeMeta.content=state.theme==="flower"?"#b92f68":state.theme==="flower-dark"?"#7e244d":state.theme==="red-dark"?"#76191f":state.theme==="dark"?"#07120e":state.theme==="iconic"?"#064e3b":"#f3f6f4";
  let app=document.getElementById("app");app.innerHTML=tab==="home"?home():tab==="cashflow"?cashflow():tab==="budget"?budget():plan();
  document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab))
 }
@@ -521,7 +533,7 @@ function plan(){
  <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>Annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear>12?`12 monthly pay entries are automatic. ${state.paychecksPerYear-12} extra paycheck${state.paychecksPerYear-12===1?"":"s"} stay unassigned until you record them in Cash Flow.`:"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
  <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(state.flexible)}</b></div><div class="allowance-calc">${allowanceCalculationText()}</div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button></div>
  <div class="card"><div class="row"><b>Wallets</b><b>${euro(walletTotal())}</b></div><div class="muted">Wallets are earmarked balances and are included in Current Savings. Use them for gifts, holidays, car costs or anything you want to reserve.</div><div class="wallet-grid">${(state.wallets||[]).map(w=>`<div class="wallet-card"><div class="row"><span><b>${esc(w.name)}</b></span><b>${euro(w.balance)}</b></div><div class="wallet-actions"><button class="secondary" onclick="editWallet('${esc(w.id)}')">✎ Edit</button><button class="icon delete trash-btn" onclick="deleteWallet('${esc(w.id)}')" aria-label="Delete wallet">🗑</button></div></div>`).join("")||'<div class="empty">No wallets yet.</div>'}</div><button style="margin-top:10px" onclick="addWallet()">＋ Add wallet</button></div>
- <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div><div class="theme-choice ${state.theme==="flower"?"active":""}" onclick="setTheme('flower')"><span class="theme-icon">🌸</span>Flower</div></div></div>
+ <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div><div class="theme-choice ${state.theme==="flower"?"active":""}" onclick="setTheme('flower')"><span class="theme-icon">🌸</span>Flower</div><div class="theme-choice ${state.theme==="flower-dark"?"active":""}" onclick="setTheme('flower-dark')"><span class="theme-icon">🌙🌸</span>Flower Dark</div><div class="theme-choice ${state.theme==="red-dark"?"active":""}" onclick="setTheme('red-dark')"><span class="theme-icon">🌹</span>Red Dark</div></div></div>
  <div class="card"><b>Data safety</b><div class="muted">Automatic local snapshot: ${backupInfo()}</div><button class="secondary" onclick="openBackupSettings()">💾 Backup & restore</button></div>`;
 }
 function editAllowance(){
