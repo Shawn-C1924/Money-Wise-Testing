@@ -453,27 +453,37 @@ function actualPlanExpensesByMonth(){
   }
   return {out,budgetOut,flexOut};
 }
-function projectedPlanCosts(includeAllowance){
+function projectedFutureCosts(includeAllowance){
   const keys=planMonthKeys();
-  if(!keys.length)return planned()*monthsInPlan()+(includeAllowance?(Number(state.flexible)||0)*monthsInPlan():0);
+  if(!keys.length)return 0;
   const current=monthKey(),actual=actualPlanExpensesByMonth();
   let total=0;
   keys.forEach(k=>{
-    if(k<current){
-      total+=actual.out[k]||0;
-    }else if(k===current){
-      const actualTotal=actual.out[k]||0;
-      const remainingEssentials=Math.max(0,planned()-(actual.budgetOut[k]||0));
-      const remainingAllowance=Math.max(0,(Number(state.flexible)||0)-(actual.flexOut[k]||0));
-      total+=actualTotal+remainingEssentials+(includeAllowance?remainingAllowance:0);
+    if(k<current)return;
+    if(k===current){
+      const actualBudget=actual.budgetOut[k]||0;
+      const actualFlexible=actual.flexOut[k]||0;
+      const remainingEssentials=Math.max(0,planned()-actualBudget);
+      const remainingAllowance=Math.max(0,(Number(state.flexible)||0)-actualFlexible);
+      total+=remainingEssentials+(includeAllowance?remainingAllowance:0);
     }else{
       total+=planned()+(includeAllowance?(Number(state.flexible)||0):0);
     }
   });
   return total;
 }
-function projected(){return state.startingSavings+planIncomeTotal()-projectedPlanCosts(true)+stashedTotal()}
-function essentialsOutcome(){return state.startingSavings+planIncomeTotal()-projectedPlanCosts(false)}
+function projectedFutureIncome(){
+  const keys=planMonthKeys();
+  if(!keys.length)return 0;
+  const current=monthKey();
+  return keys.reduce((total,k)=>{
+    if(k<=current)return total;
+    const d=new Date(k+'-01T12:00:00');
+    return total+payRateForDate(d)/12;
+  },0);
+}
+function projected(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(true)}
+function essentialsOutcome(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(false)}
 function autoAllowance(){
   const m=monthsInPlan(), gap=essentialsOutcome()-state.target;
   return Math.max(0,gap/m);
@@ -587,7 +597,7 @@ function plan(){
  <div class="card"><div class="muted">Projected finish</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Uses recorded spending for completed months and this month, then projects the remaining Essentials and allowance through the plan end date. Budget movements into wallets are not treated as spending.</div></div>
  <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Uses recorded spending already made, then projects only the remaining Essentials through the plan end date. Monthly allowance is excluded. Budget movements into wallets are not treated as spending.</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
  <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>End date</span><b>${planEndDate()?new Date(planEndDate()+"T12:00:00").toLocaleDateString():"Not set"}</b></div><div class="row small"><span>Current annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay day</span><span>${state.payDay}${state.payDay%10===1&&state.payDay!==11?"st":state.payDay%10===2&&state.payDay!==12?"nd":state.payDay%10===3&&state.payDay!==13?"rd":"th"} of the month</span></div><div class="muted small">${state.paychecksPerYear>12?`12 monthly pay entries are automatic. ${state.paychecksPerYear-12} extra paycheck${state.paychecksPerYear-12===1?"":"s"} stay unassigned until you record them in Cash Flow.`:"Pay is automatically added on the selected day each month."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(state.flexible)}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
- <div class="card"><div class="row"><b>Pay history</b><button class="secondary" onclick="addPayChange()">＋ Add pay change</button></div><div class="muted">Raises are applied from their effective date onward. Theoretical max, projected finish and future automatic paychecks use the rate that was active at each point in the plan.</div><div style="margin-top:10px">${(state.payHistory||[]).slice().reverse().map((x,ri)=>{const i=state.payHistory.length-1-ri;return `<div class="item"><div class="row"><span>${new Date(x.effectiveDate+"T12:00:00").toLocaleDateString()}</span><b>${euro(x.annualPay)}/yr</b></div>${i===state.payHistory.length-1?'<div class="muted small">Current rate</div>':''}<div style="text-align:right"><button class="icon delete trash-btn" onclick="removePayHistory(${i})" aria-label="Delete pay history entry">🗑</button></div></div>`}).join("")}</div></div>
+ <div class="card"><div class="row"><b>Pay history</b><button class="secondary" onclick="addPayChange()">＋ Add pay change</button></div><div class="muted">Raises are applied from their effective date onward. Raises are applied from their effective date onward. Theoretical max uses the full plan income history; projected finish and Essentials-only use the savings actually recorded so far, then project only the remaining income and costs.</div><div style="margin-top:10px">${(state.payHistory||[]).slice().reverse().map((x,ri)=>{const i=state.payHistory.length-1-ri;return `<div class="item"><div class="row"><span>${new Date(x.effectiveDate+"T12:00:00").toLocaleDateString()}</span><b>${euro(x.annualPay)}/yr</b></div>${i===state.payHistory.length-1?'<div class="muted small">Current rate</div>':''}<div style="text-align:right"><button class="icon delete trash-btn" onclick="removePayHistory(${i})" aria-label="Delete pay history entry">🗑</button></div></div>`}).join("")}</div></div>
  <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(state.flexible)}</b></div><div class="allowance-calc">${allowanceCalculationText()}</div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button></div>
  <div class="card"><div class="row"><b>Wallets</b><b>${euro(walletTotal())}</b></div><div class="muted">Wallets are earmarked balances and are included in Current Savings. Use them for gifts, holidays, car costs or anything you want to reserve.</div><div class="wallet-grid">${(state.wallets||[]).map(w=>`<div class="wallet-card"><div class="row"><span><b>${esc(w.name)}</b></span><b>${euro(w.balance)}</b></div><div class="wallet-actions"><button class="secondary" onclick="editWallet('${esc(w.id)}')">✎ Edit</button><button class="icon delete trash-btn" onclick="deleteWallet('${esc(w.id)}')" aria-label="Delete wallet">🗑</button></div></div>`).join("")||'<div class="empty">No wallets yet.</div>'}</div><button style="margin-top:10px" onclick="addWallet()">＋ Add wallet</button></div>
  <div class="card"><b>Appearance</b><div class="muted">Choose your MoneyWise look.</div><div class="theme-grid"><div class="theme-choice ${state.theme==="light"?"active":""}" onclick="setTheme('light')"><span class="theme-icon">☀️</span>Light</div><div class="theme-choice ${state.theme==="dark"?"active":""}" onclick="setTheme('dark')"><span class="theme-icon">🌙</span>Dark</div><div class="theme-choice ${state.theme==="iconic"?"active":""}" onclick="setTheme('iconic')"><span class="theme-icon">◈</span>Iconic</div><div class="theme-choice ${state.theme==="flower"?"active":""}" onclick="setTheme('flower')"><span class="theme-icon">🌸</span>Flower</div><div class="theme-choice ${state.theme==="flower-dark"?"active":""}" onclick="setTheme('flower-dark')"><span class="theme-icon">🌙🌸</span>Flower Dark</div><div class="theme-choice ${state.theme==="red-dark"?"active":""}" onclick="setTheme('red-dark')"><span class="theme-icon">🌹</span>Red Dark</div></div></div>
