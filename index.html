@@ -697,7 +697,7 @@ function allowanceCalculationText(){
 function autoAssignAllowance(){
  const m=monthsInPlan(),availableForAllowance=Math.max(0,essentialsOutcome()-state.target),monthly=availableForAllowance/m,perPay=monthly*12/(Number(state.paychecksPerYear)||12);
  if(!confirm(`This will alter your allowance so you can JUST meet your target.\n\nEssentials-only outcome: ${euro(essentialsOutcome())}\nTarget: ${euro(state.target)}\nMonths: ${m}\n\nNew monthly allowance: ${euro(monthly)}\nEquivalent per paycheck: ${euro(perPay)} (${state.paychecksPerYear} paychecks/year)\n\nDo you want to apply this allowance?`))return;
- upsertAllowanceHistory(localDateKey(),monthly);state.allowanceConfigured=true;save();render("plan");
+ upsertAllowanceHistory(periodStartDate(monthKey()).toISOString().slice(0,10),monthly);state.allowanceConfigured=true;save();render("plan");
 }
 function showSetup(){
  document.getElementById("sheet").innerHTML=`<h2>Welcome to MoneyWise</h2><p class="muted">Enter your private planning assumptions. They are stored only on this device.</p>${field("Timeframe (years)","sy",2,".5")}${field("Starting savings (€)","ss","",".01")}${field("Annual income (€)","si",""," .01")}${field("Target savings (€)","st",""," .01")}${field("Additional monthly allowance (€)","sf",""," .01")}<button onclick="finishSetup()">Save private plan</button>`;
