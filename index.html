@@ -48,7 +48,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 .trash-btn,.delete-btn,.icon-delete{color:#d64545!important;background:transparent!important;border:0!important;box-shadow:none!important;font-size:18px!important}
 .extra-paychecks{margin-top:12px}
 .extra-paychecks summary{cursor:pointer;font-weight:700}
-.allowance-calc{margin-top:6px;font-size:12px;line-height:1.45;opacity:.72}
+.allowance-calc{margin-top:6px;font-size:12px;line-height:1.45;opacity:.72}.info-btn{width:22px!important;height:22px!important;min-width:22px!important;padding:0!important;border-radius:50%!important;display:inline-flex!important;align-items:center;justify-content:center;font-weight:800;font-size:13px;line-height:1;border:1px solid var(--line);background:var(--card);color:var(--text);box-shadow:none!important}
 
 </style>
 
@@ -149,7 +149,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.44";
+const DATA_VERSION="0.45";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:0,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -183,7 +183,7 @@ const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annual
   {person:"Child 1",occasion:"Christmas",amount:50},
   {person:"Child 2",occasion:"Birthday",amount:50},
   {person:"Child 2",occasion:"Christmas",amount:50}
-],weekendFood:173.33,general:100,transactions:[],carry:0,carryHistory:[],stashHistory:[],monthlyActions:{},incomeHistory:[],startDate:"",payDay:1,paychecksPerYear:12,payHistory:[],hiddenBudgetSections:{},skippedPaychecks:{},autoBackup:true,backupIntervalMinutes:15,dark:false,theme:"iconic",openMonths:{},customSections:[],wallets:[],walletFunding:{},allowanceCredits:{},allowanceHistory:[],monthlySnapshots:{}};
+],weekendFood:173.33,general:100,transactions:[],carry:0,carryHistory:[],stashHistory:[],monthlyActions:{},incomeHistory:[],startDate:"",payDay:1,paychecksPerYear:12,payHistory:[],hiddenBudgetSections:{},skippedPaychecks:{},autoBackup:true,backupIntervalMinutes:15,dark:false,theme:"iconic",openMonths:{},customSections:[],wallets:[],walletFunding:{},allowanceCredits:{},allowanceHistory:[],allowanceAutoRatio:null,monthlySnapshots:{}};
 function localDateKey(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
 let state;
 try{
@@ -276,6 +276,7 @@ function handleBackupImport(input){
       if(!state.walletFunding)state.walletFunding={};
 if(!state.allowanceCredits)state.allowanceCredits={};
 if(!Array.isArray(state.allowanceHistory))state.allowanceHistory=[];
+if(state.allowanceAutoRatio===undefined)state.allowanceAutoRatio=null;
 if(!state.monthlySnapshots)state.monthlySnapshots={};
 if(!Array.isArray(state.payHistory))state.payHistory=[];
 if(!state.payHistory.length){state.payHistory=[{effectiveDate:state.startDate||new Date().toISOString().slice(0,10),annualPay:Number(state.annualPay)||0}]}
@@ -474,6 +475,11 @@ function extraPaycheckSummary(){
 function allowanceCreditForMonth(k=monthKey()){return Number(state.allowanceCredits?.[k]||0)}
 function allowanceForMonth(k=monthKey()){
   const key=String(k||monthKey()),start=periodStartDate(key),startKey=start.toISOString().slice(0,10);
+  if(state.allowanceAutoRatio!==null && state.allowanceAutoRatio!==undefined && Number.isFinite(Number(state.allowanceAutoRatio))){
+    const ratio=Math.max(0,Number(state.allowanceAutoRatio)||0);
+    const startPlan=state.startDate?new Date(state.startDate+"T12:00:00"):start;
+    if(start>=startPlan)return payRateForDate(start)/12*ratio;
+  }
   let amount=Number(state.flexible)||0;
   for(const x of state.allowanceHistory||[]){
     if(String(x.effectiveDate).slice(0,10)<=startKey)amount=Number(x.amount)||0;
@@ -484,6 +490,7 @@ function allowanceForMonth(k=monthKey()){
 function currentAllowanceEntry(){const startKey=periodStartDate(monthKey()).toISOString().slice(0,10);let current=null;for(const x of state.allowanceHistory||[]){if(x.effectiveDate<=startKey)current=x;else break}return current;}
 function currentAllowance(){return allowanceForMonth(monthKey())}
 function upsertAllowanceHistory(effectiveDate,amount){
+  state.allowanceAutoRatio=null;
   const date=String(effectiveDate||localDateKey()).slice(0,10),value=Math.max(0,Number(amount)||0);
   const existing=(state.allowanceHistory||[]).find(x=>x.effectiveDate===date);
   if(existing)existing.amount=value;else state.allowanceHistory.push({effectiveDate:date,amount:value});
@@ -604,6 +611,7 @@ function allowanceTimelineNote(){
  const upcoming=(state.allowanceHistory||[]).filter(x=>String(x.effectiveDate)>startKey).sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate));
  const previous=(state.allowanceHistory||[]).filter(x=>String(x.effectiveDate)<=(startKey)).sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate));
  let html=`Current allowance for this period: <b>${euro(currentAllowance())}</b>.`;
+ if(state.allowanceAutoRatio!==null && state.allowanceAutoRatio!==undefined){html+=` Auto Assign links the allowance to pay: <b>${(Number(state.allowanceAutoRatio||0)*100).toFixed(2)}%</b> of monthly salary, so future pay changes automatically adjust the allowance when their period starts.`;}
  if(upcoming.length){const u=upcoming[0];html+=` Upcoming: <b>${euro(u.amount)}/month</b> from ${new Date(u.effectiveDate+"T12:00:00").toLocaleDateString()}.`;}
  if(previous.length>1){html+=` Previous allowance changes are retained in the history below.`;}
  return html;
@@ -679,7 +687,7 @@ function customSectionsMonthly(){return (state.customSections||[]).reduce((a,s)=
 function plan(){
  let m=monthsInPlan(),p=projected(),ess=essentialsOutcome(),current=currentSavings(),change=current-state.startingSavings;
  return `<div class="top"><h1>Plan</h1><div class="muted">${state.years} year${state.years==1?"":"s"} • ${m} months</div></div>
- <div class="grid"><div class="metric"><span class="muted">Starting savings</span><b>${euro(state.startingSavings)}</b></div><div class="metric"><span class="muted">Current savings</span><b>${euro(current)}</b></div><div class="metric"><span class="muted">Theoretical max</span><b>${euro(theoreticalMax())}</b></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div></div><div class="muted small" style="margin:8px 2px 14px">Theoretical max = starting savings + all projected plan income. It follows the pay-rate history and effective dates, but intentionally ignores Essentials, allowance spending, wallet spending and other expenses. It represents the ceiling if all projected income were retained.</div>
+ <div class="grid"><div class="metric"><span class="muted">Starting savings</span><b>${euro(state.startingSavings)}</b></div><div class="metric"><span class="muted">Current savings</span><b>${euro(current)}</b></div><div class="metric"><div class="row"><span class="muted">Theoretical max</span><button class="info-btn" onclick="showTheoreticalMaxInfo()" aria-label="Explain theoretical max">i</button></div><b>${euro(theoreticalMax())}</b></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div></div>
  <div class="card"><div class="row"><b>Current savings</b><b class="${change>=0?"cash-in":"spend-outflow"}">${change>=0?"↑":"↓"} ${euro(Math.abs(change))}</b></div><div class="big">${euro(current)}</div><div class="row small"><span>Started ${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span><span>Target ${euro(state.target)}</span></div><div class="muted">Current savings reflects your starting savings plus recorded income/profit, spending and stashed amounts.</div></div>
  <div class="card ${state.allowanceConfigured?"":"projection-warning"}"><div class="row"><div class="muted">Projected finish</div>${state.allowanceConfigured?'':'<span class=\"warning-icon\" title=\"Monthly allowance has not been set\" aria-label=\"Monthly allowance has not been set\">⚠️</span>'}</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Uses your recorded savings activity so far, then projects the remaining income, Essentials and monthly allowance through the plan end date. Budget movements into wallets are not treated as spending.${state.allowanceConfigured?"":" <b>Heads up:</b> no Monthly Allowance has been set, so this projection currently assumes €0 flexible spending."}</div></div>
  <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Uses recorded spending already made, then projects only the remaining Essentials through the plan end date. Monthly allowance is excluded. Budget movements into wallets are not treated as spending.</div><div class="muted small" style="margin-top:8px">${allowanceTimelineNote()}</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
@@ -704,13 +712,40 @@ function allowanceCalculationText(){
   return `Essentials-only outcome ${euro(outcome)} − target ${euro(target)} = ${euro(available)} available over ${months} months → ${euro(monthly)}/month allowance.`;
 }
 function autoAssignAllowance(){
- const current=monthKey(),remainingPeriods=planMonthKeys().filter(k=>k>=current).length||1,actual=actualPlanExpensesByMonth(),actualFlexible=Number(actual.flexOut?.[current]||0),base=Math.max(0,essentialsOutcome()-Number(state.target||0)),monthly=Math.max(0,(base+actualFlexible)/remainingPeriods),perPay=monthly*12/(Number(state.paychecksPerYear)||12);
- if(!confirm(`This will set the allowance across the remaining plan periods so the projected finish meets your target.\n\nEssentials-only outcome: ${euro(essentialsOutcome())}\nTarget: ${euro(state.target)}\nRemaining periods: ${remainingPeriods}\nCurrent period spending already recorded: ${euro(actualFlexible)}\n\nNew monthly allowance: ${euro(monthly)}\nEquivalent per paycheck: ${euro(perPay)} (${state.paychecksPerYear} paychecks/year)\n\nApply this allowance to the current period and forward?`))return;
- upsertAllowanceHistory(periodStartDate(current).toISOString().slice(0,10),monthly);
+ const current=monthKey(),keys=planMonthKeys().filter(k=>k>=current);
+ const actual=actualPlanExpensesByMonth(),actualFlexible=Number(actual.flexOut?.[current]||0);
+ const base=Math.max(0,essentialsOutcome()-Number(state.target||0));
+ const weightedPay=keys.reduce((sum,k)=>sum+payRateForDate(periodStartDate(k))/12,0);
+ const ratio=weightedPay>0?Math.max(0,(base+actualFlexible)/weightedPay):0;
+ const currentAmount=payRateForDate(periodStartDate(current))/12*ratio;
+ const futureRates=[...new Set(keys.map(k=>payRateForDate(periodStartDate(k))))];
+ if(!confirm(`This will set an allowance proportional to the salary active in each pay period so the projected finish meets your target.\n\nEssentials-only outcome: ${euro(essentialsOutcome())}\nTarget: ${euro(state.target)}\nRemaining periods: ${keys.length}\nCurrent period spending already recorded: ${euro(actualFlexible)}\n\nCurrent period allowance: ${euro(currentAmount)}\nSalary-linked allowance ratio: ${(ratio*100).toFixed(2)}% of monthly pay\nPay rates covered: ${futureRates.map(x=>euro(x)+"/year").join(", ")}\n\nApply this allowance rule from the current period forward?`))return;
+ state.allowanceAutoRatio=ratio;
  state.allowanceConfigured=true;
+ const effective=periodStartDate(current).toISOString().slice(0,10);
+ const existing=(state.allowanceHistory||[]).find(x=>x.effectiveDate===effective);
+ const value=Math.max(0,currentAmount);
+ if(existing)existing.amount=value;else state.allowanceHistory.push({effectiveDate:effective,amount:value});
+ state.allowanceHistory.sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate));
+ state.flexible=value;
  save();
  render("plan");
 }
+function theoreticalMaxBreakdown(){
+ const keys=planMonthKeys();
+ const groups=[];
+ keys.forEach(k=>{const rate=payRateForDate(periodStartDate(k)),m=rate/12;let g=groups.find(x=>x.rate===rate);if(!g){g={rate,months:0,total:0,start:k,end:k};groups.push(g)}g.months++;g.total+=m;g.end=k;});
+ const income=groups.reduce((a,g)=>a+g.total,0);
+ const start=Number(state.startingSavings)||0;
+ return {groups,income,start,total:start+income};
+}
+function showTheoreticalMaxInfo(){
+ const b=theoreticalMaxBreakdown();
+ const rows=b.groups.length?b.groups.map(g=>`<div class="item"><div class="row"><span>${monthLabel(g.start)}${g.start!==g.end?` → ${monthLabel(g.end)}`:""}</span><b>${euro(g.total)}</b></div><div class="muted small">${euro(g.rate)}/year ÷ 12 = ${euro(g.rate/12)}/period × ${g.months} period${g.months===1?"":"s"}</div></div>`).join(""):'<div class="empty">No projected pay periods.</div>';
+ document.getElementById("sheet").innerHTML=`<h2>Theoretical max</h2><div class="muted">This is the maximum projected savings if every projected paycheck is retained and no Essentials, allowance spending, wallet spending or other expenses are deducted.</div><div class="card" style="margin-top:12px"><div class="row"><span>Starting savings</span><b>${euro(b.start)}</b></div><div class="row"><span>Projected income</span><b>+${euro(b.income)}</b></div><div class="row" style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px"><b>Theoretical max</b><b>${euro(b.total)}</b></div></div><div class="subhead" style="margin-top:16px">Income calculation</div>${rows}<button class="secondary" onclick="closeModal()">Close</button>`;
+ document.getElementById("modal").classList.add("open");
+}
+
 function showSetup(){
  document.getElementById("sheet").innerHTML=`<h2>Welcome to MoneyWise</h2><p class="muted">Enter your private planning assumptions. They are stored only on this device.</p>${field("Timeframe (years)","sy",2,".5")}${field("Starting savings (€)","ss","",".01")}${field("Annual income (€)","si",""," .01")}${field("Target savings (€)","st",""," .01")}${field("Additional monthly allowance (€)","sf",""," .01")}<button onclick="finishSetup()">Save private plan</button>`;
  document.getElementById("modal").classList.add("open")

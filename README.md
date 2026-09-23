@@ -1,3 +1,3 @@
-# MoneyWise PWA v0.42
+MoneyWise PWA v0.45
 
-Manual Cash Flow income and spending can be dated explicitly. Transactions are assigned to the pay period containing their chosen date, preserving historical periods.
+Auto-assigned allowance is linked to monthly pay by period, so future pay-rate changes adjust the allowance when the relevant pay period starts. Theoretical Max has an info breakdown.
