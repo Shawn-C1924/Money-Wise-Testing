@@ -149,7 +149,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.46";
+const DATA_VERSION="0.47";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:0,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -517,14 +517,25 @@ function planEndDate(){if(!state.startDate)return "";const d=new Date(state.star
 function payRateForDate(date){const key=date instanceof Date?date.toISOString().slice(0,10):String(date||"").slice(0,10);let rate=Number(state.annualPay)||0;for(const x of state.payHistory||[]){if(x.effectiveDate<=key)rate=Number(x.annualPay)||0;else break}return rate}
 function planIncomeTotal(){
   if(!state.startDate)return (Number(state.annualPay)||0)*state.years;
-  const start=new Date(state.startDate+"T12:00:00"),out=[];
-  for(let i=0;i<monthsInPlan();i++){
-    const d=new Date(start);d.setMonth(start.getMonth()+i);
-    const k=monthKey(d);
-    const pd=periodStartDate(k);
-    if(!out.includes(k))out.push(k);
-  }
-  return out.reduce((total,k)=>total+payRateForDate(periodStartDate(k))/12,0);
+  const keys=planMonthKeys();
+  if(!keys.length)return 0;
+  // A financial period is funded by the paycheck that starts it.
+  // For the current period, that paycheck may already have happened, so
+  // use the next payday for the remaining projected income. This means a
+  // pay change effective today affects the next paycheck without rewriting
+  // the paycheck that already happened.
+  const today=new Date(); today.setHours(12,0,0,0);
+  let total=0;
+  keys.forEach((k,i)=>{
+    let payDate=periodStartDate(k);
+    if(payDate<=today){
+      const nextKey=keys[i+1];
+      if(nextKey)payDate=periodStartDate(nextKey);
+      else return;
+    }
+    total+=payRateForDate(payDate)/(Number(state.paychecksPerYear)||12);
+  });
+  return total;
 }
 function theoreticalMax(){return state.startingSavings+planIncomeTotal()}
 function stashedTotal(){return (state.stashHistory||[]).reduce((a,x)=>a+(Number(x.amount)||0),0)}
@@ -581,10 +592,12 @@ function projectedFutureCosts(includeAllowance){
 function projectedFutureIncome(){
   const keys=planMonthKeys();
   if(!keys.length)return 0;
-  const current=monthKey();
+  const today=new Date(); today.setHours(12,0,0,0);
+  const paychecks=Number(state.paychecksPerYear)||12;
   return keys.reduce((total,k)=>{
-    if(k<=current)return total;
-    return total+payRateForDate(periodStartDate(k))/12;
+    const payDate=periodStartDate(k);
+    if(payDate<=today)return total;
+    return total+payRateForDate(payDate)/paychecks;
   },0);
 }
 function projected(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(true)}
