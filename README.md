@@ -2,19 +2,30 @@
 
 MoneyWise is a mobile-first personal budgeting and savings PWA designed for GitHub Pages and iPhone Home Screen use.
 
-## v0.48 architecture refactor
+## v0.48
 
-This release begins the modular JavaScript refactor while deliberately preserving the known-working v0.47 runtime. See `docs/ARCHITECTURE.md` and `CHANGELOG.md`.
+This release is a **refactor stabilization release**. The complete v0.47 application runtime is retained so the app remains functional while the new architecture is documented and prepared for incremental migration.
 
-## Local structure
+### Target architecture
 
-- `index.html` — shell
-- `css/app.css` — styles
-- `js/config.js` — version/config boundary
-- `js/app.js` — current application runtime
-- `js/calculations/` — calculation modules being extracted
-- `sw.js` — PWA service worker
+See:
 
-## GitHub Pages
+- `docs/ARCHITECTURE.md` — modular JavaScript design and migration plan
+- `architecture.png` — visual architecture diagram
+- `CHANGELOG.md` — iteration history
 
-The project remains a static site. Push the repository to GitHub and configure GitHub Pages to deploy from the branch/root containing these files.
+### Deployment
+
+The app remains a static GitHub Pages PWA. No server or database is required. User data remains local to the browser and can be exported through MoneyWise's existing backup system.
+
+## Refactor approach
+
+The target structure separates:
+
+1. Domain models
+2. Financial calculation engines
+3. Screens and reusable UI components
+4. Storage, backup, and migration
+5. PWA/bootstrap code
+
+The migration will be incremental. A working application is required after each iteration before another responsibility is moved.

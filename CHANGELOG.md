@@ -1,23 +1,15 @@
 # MoneyWise Changelog
 
-## [0.48.0] - Modular architecture, iteration 1
+## v0.48 — Refactor stabilization
 
-### Added
-- Extracted the PWA shell into `index.html`.
-- Moved all existing styles into `css/app.css`.
-- Moved the working application runtime into `js/app.js`.
-- Added `js/config.js` as the single application-version/config boundary.
-- Added the first `ProjectionEngine` module boundary for the next calculation extraction pass.
-- Added architecture documentation and diagram.
+- Restored the complete v0.47 runtime as the functional baseline.
+- Preserved the existing MoneyWise financial behaviour and UI while beginning the architecture refactor safely.
+- Updated the application data version to 0.48 so v0.47 saves migrate forward without being discarded.
+- Bumped the service-worker cache to v048.
+- Added `architecture.png` showing the target modular JavaScript architecture.
+- Added `docs/ARCHITECTURE.md` describing the planned separation of models, financial engines, UI, and storage.
+- Added this changelog for iteration-by-iteration tracking.
 
-### Changed
-- Preserved the v0.47 application behaviour while restructuring the file layout.
-- Service-worker cache bumped to v048.
-- Saved-data loader now accepts the v0.48 schema during migration.
+### Refactor policy
 
-### Refactor iterations
-1. **0.48 — Safe extraction:** separate HTML, CSS, application runtime, configuration, and calculation boundary without changing financial behaviour.
-2. **Next — Domain models:** extract PayHistory, AllowanceHistory, Wallets, Transactions, Budget and Plan state.
-3. **Next — Financial engines:** move pay periods, projections, allowance assignment and savings calculations into dedicated modules.
-4. **Next — Screens/components:** isolate Home, Budget, Cash Flow, Plan and reusable UI components.
-5. **Final — Storage/migrations:** isolate persistence, backups and data migrations.
+The runtime is intentionally **not** split into multiple JavaScript modules in this iteration. The previous attempt did that too aggressively and caused runtime regressions. Future refactor iterations will move one responsibility at a time and preserve a working build after every iteration.
