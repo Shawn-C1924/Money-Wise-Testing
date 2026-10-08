@@ -2,7 +2,7 @@
 
 MoneyWise is a mobile-first personal budgeting and savings PWA designed for GitHub Pages and iPhone Home Screen use.
 
-## v0.48
+## v0.49
 
 This release is a **refactor stabilization release**. The complete v0.47 application runtime is retained so the app remains functional while the new architecture is documented and prepared for incremental migration.
 
