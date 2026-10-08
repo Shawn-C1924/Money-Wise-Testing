@@ -1,3 +1,8 @@
+# v0.56
+- Unified Theoretical Max display and info panel through one authoritative calculation.
+- Added Essentials-only Refresh button.
+- Projection recalculation runs through the normal app render/load path.
+
 # MoneyWise Changelog
 
 ## v0.54
