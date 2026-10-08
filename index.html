@@ -149,7 +149,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.53";
+const DATA_VERSION="0.55";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,bankSavings:34000,cashSavings:0,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:0,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -537,7 +537,7 @@ function allowanceForMonth(k=monthKey()){
   if(state.allowanceAutoRatio!==null && state.allowanceAutoRatio!==undefined && Number.isFinite(Number(state.allowanceAutoRatio))){
     const ratio=Math.max(0,Number(state.allowanceAutoRatio)||0);
     const startPlanKey=state.startDate?String(state.startDate).slice(0,10):startKey;
-    if(startKey>=startPlanKey)return payRateForDate(start)/(Number(state.paychecksPerYear)||12)*ratio;
+    if(startKey>=startPlanKey)return (payRateForDate(start)/12)*ratio;
   }
   let amount=Number(state.flexible)||0;
   for(const x of state.allowanceHistory||[]){
@@ -565,14 +565,8 @@ function payRateForDate(date){const key=date instanceof Date?date.toISOString().
 function planIncomeTotalAllPeriods(){
  const keys=planMonthKeys();
  if(!keys.length)return 0;
- const paychecks=Math.max(1,Number(state.paychecksPerYear)||12);
- const extra=Math.max(0,paychecks-12);
- return keys.reduce((total,k)=>{
-   const rate=payRateForDate(periodStartDate(k));
-   const monthly=rate/12;
-   const extraMonthly=extra>0?(rate/paychecks)*(extra/12):0;
-   return total+monthly+extraMonthly;
- },0);
+ // Monthly projection: paycheck frequency changes paycheck size, not annual income.
+ return keys.reduce((total,k)=>total+(payRateForDate(periodStartDate(k))/12),0);
 }
 function planIncomeTotal(){
   if(!state.startDate)return (Number(state.annualPay)||0)*state.years;
@@ -648,28 +642,23 @@ function projectedFutureIncome(){
   const keys=planMonthKeys();
   if(!keys.length)return 0;
   const today=new Date(); today.setHours(12,0,0,0);
-  const paychecks=Math.max(1,Number(state.paychecksPerYear)||12);
-  const extra=Math.max(0,paychecks-12);
   return keys.reduce((total,k)=>{
     const payDate=periodStartDate(k);
     if(payDate<=today)return total;
-    const rate=payRateForDate(payDate);
-    const monthly=rate/12;
-    const extraMonthly=extra>0?(rate/paychecks)*(extra/12):0;
-    return total+monthly+extraMonthly;
+    return total+(payRateForDate(payDate)/12);
   },0);
 }
 function projected(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(true)}
 function essentialsOutcome(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(false)}
 function planPayPeriodsRemaining(){
-  const keys=planMonthKeys(),current=monthKey(),paychecks=Number(state.paychecksPerYear)||12;
-  const remainingMonths=keys.filter(k=>k>=current).length;
-  return Math.max(1,remainingMonths*paychecks/12);
+  // Allowance is monthly, never per-paycheck.
+  const keys=planMonthKeys(),current=monthKey();
+  return Math.max(1,keys.filter(k=>k>=current).length);
 }
 function autoAllowance(){
-  const periods=planPayPeriodsRemaining();
+  const months=planPayPeriodsRemaining();
   const gap=Math.max(0,essentialsOutcome()-state.target);
-  return gap/periods;
+  return gap/months;
 }
 function paycheckAmount(date=new Date()){return payRateForDate(date)/(Number(state.paychecksPerYear)||12)}
 function payScheduleLabel(){
@@ -822,17 +811,17 @@ function allowanceCalculationText(){
   const ratio=payPerPeriod?available/payPerPeriod:0;
   const currentPay=payRateForDate(periodStartDate(monthKey()))/(Number(state.paychecksPerYear)||12);
   const current=state.allowanceAutoRatio!==null&&state.allowanceAutoRatio!==undefined?currentPay*Number(state.allowanceAutoRatio):allowanceForMonth(monthKey());
-  return `Allowance is calculated against paychecks, not calendar months. Current paycheck-equivalent pay is ${euro(currentPay)}; current allowance is ${euro(current)}. ${state.allowanceAutoRatio!==null&&state.allowanceAutoRatio!==undefined?`Auto Assign uses ${(Number(state.allowanceAutoRatio)*100).toFixed(2)}% of each applicable paycheck.`:`Manual allowances remain fixed until their effective date.`}`;
+  return `Allowance is calculated per month. Current monthly pay equivalent is ${euro(currentPay)}; current allowance is ${euro(current)}. ${state.allowanceAutoRatio!==null&&state.allowanceAutoRatio!==undefined?`Auto Assign uses ${(Number(state.allowanceAutoRatio)*100).toFixed(2)}% of each applicable paycheck.`:`Manual allowances remain fixed until their effective date.`}`;
 }
 function autoAssignAllowance(){
  const current=monthKey(),keys=planMonthKeys().filter(k=>k>=current);
  const actual=actualPlanExpensesByMonth(),actualFlexible=Number(actual.flexOut?.[current]||0);
  const base=Math.max(0,essentialsOutcome()-Number(state.target||0));
- const payPerPeriod=keys.reduce((sum,k)=>sum+payRateForDate(periodStartDate(k))/(Number(state.paychecksPerYear)||12),0);
- const ratio=payPerPeriod>0?Math.max(0,(base+actualFlexible)/payPerPeriod):0;
- const currentAmount=payRateForDate(periodStartDate(current))/(Number(state.paychecksPerYear)||12)*ratio;
+ const monthlyPayPool=keys.reduce((sum,k)=>sum+payRateForDate(periodStartDate(k))/12,0);
+ const ratio=monthlyPayPool>0?Math.max(0,(base+actualFlexible)/monthlyPayPool):0;
+ const currentAmount=(payRateForDate(periodStartDate(current))/12)*ratio;
  const futureRates=[...new Set(keys.map(k=>payRateForDate(periodStartDate(k))))];
- if(!confirm(`This will set an allowance proportional to the salary active in each pay period so the projected finish meets your target.\n\nEssentials-only outcome: ${euro(essentialsOutcome())}\nTarget: ${euro(state.target)}\nRemaining periods: ${keys.length}\nCurrent period spending already recorded: ${euro(actualFlexible)}\n\nCurrent period allowance: ${euro(currentAmount)}\nSalary-linked allowance ratio: ${(ratio*100).toFixed(2)}% of monthly pay\nPay rates covered: ${futureRates.map(x=>euro(x)+"/year").join(", ")}\n\nApply this allowance rule from the current period forward?`))return;
+ if(!confirm(`This will set an allowance proportional to the salary active in each pay period so the projected finish meets your target.\n\nEssentials-only outcome: ${euro(essentialsOutcome())}\nTarget: ${euro(state.target)}\nRemaining periods: ${keys.length}\nCurrent period spending already recorded: ${euro(actualFlexible)}\n\nCurrent monthly allowance: ${euro(currentAmount)}\nSalary-linked allowance ratio: ${(ratio*100).toFixed(2)}% of monthly pay\nPay rates covered: ${futureRates.map(x=>euro(x)+"/year").join(", ")}\n\nApply this allowance rule from the current period forward?`))return;
  state.allowanceAutoRatio=ratio;
  state.allowanceConfigured=true;
  const effective=periodStartDate(current).toISOString().slice(0,10);

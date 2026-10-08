@@ -52,3 +52,9 @@
 ### Refactor policy
 
 The runtime is intentionally **not** split into multiple JavaScript modules in this iteration. The previous attempt did that too aggressively and caused runtime regressions. Future refactor iterations will move one responsibility at a time and preserve a working build after every iteration.
+
+
+## v0.55
+- Fixed projection math so annual pay is never inflated by paycheck frequency.
+- Auto Assign is explicitly monthly; extra paychecks do not create extra allowance months.
+- Projected monthly income uses annual pay / 12, while actual paycheck entries still use annual pay / paychecks per year.
