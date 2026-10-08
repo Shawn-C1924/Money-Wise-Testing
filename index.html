@@ -641,15 +641,30 @@ function projectedFutureCosts(includeAllowance){
 function projectedFutureIncome(){
   const keys=planMonthKeys();
   if(!keys.length)return 0;
-  const today=new Date(); today.setHours(12,0,0,0);
+  const incomeByMonth={};
+  for(const x of state.transactions||[]){
+    if(x.type!=="income")continue;
+    const k=x.month||monthKey(new Date(x.date||Date.now()));
+    if(keys.includes(k))incomeByMonth[k]=(incomeByMonth[k]||0)+(Number(x.amount)||0);
+  }
   return keys.reduce((total,k)=>{
-    const payDate=periodStartDate(k);
-    if(payDate<=today)return total;
-    return total+(payRateForDate(payDate)/12);
+    const planned=payRateForDate(periodStartDate(k))/12;
+    return total+Math.max(0,planned-(incomeByMonth[k]||0));
   },0);
 }
 function projected(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(true)}
-function essentialsOutcome(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(false)}
+function projectedEssentialsTotal(){
+  const keys=planMonthKeys();
+  if(!keys.length)return 0;
+  const actual=actualPlanExpensesByMonth();
+  let total=0;
+  keys.forEach(k=>{
+    const already=actual.budgetOut[k]||0;
+    total+=k<monthKey()?already:Math.max(already,planned());
+  });
+  return total;
+}
+function essentialsOutcome(){return theoreticalMax()-projectedEssentialsTotal()}
 function planPayPeriodsRemaining(){
   // Allowance is monthly, never per-paycheck.
   const keys=planMonthKeys(),current=monthKey();
@@ -789,7 +804,7 @@ function plan(){
  <div class="grid"><div class="metric"><span class="muted">Starting savings</span><b>${euro(state.startingSavings)}</b></div><div class="metric"><span class="muted">Current savings</span><b>${euro(current)}</b></div><div class="metric"><div class="row"><span class="muted">Theoretical max</span><button class="info-btn" onclick="showTheoreticalMaxInfo()" aria-label="Explain theoretical max">i</button></div><b>${euro(theoreticalMax())}</b><div class="muted small">Starting savings + projected plan income</div></div><div class="metric"><span class="muted">Target</span><b>${euro(state.target)}</b></div></div>
  <div class="card"><div class="row"><b>Current savings</b><b class="${change>=0?"cash-in":"spend-outflow"}">${change>=0?"↑":"↓"} ${euro(Math.abs(change))}</b></div><div class="big">${euro(current)}</div><div class="row small"><span>Bank savings</span><b>${euro(state.bankSavings)}</b></div><div class="row small"><span>Cash savings</span><b>${euro(state.cashSavings)}</b></div><div class="row small"><span>Pockets</span><b>${euro(walletTotal())}</b></div><button class="secondary" onclick="editSavingsBalances()">✎ Edit savings balances</button><button class="secondary" onclick="moveFunds()">↔ Move funds</button><div class="row small"><span>Started ${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span><span>Target ${euro(state.target)}</span></div><div class="muted">Current savings reflects your starting savings plus recorded income/profit, spending and stashed amounts.</div></div>
  <div class="card ${state.allowanceConfigured?"":"projection-warning"}"><div class="row"><div class="muted">Projected finish</div>${state.allowanceConfigured?'':'<span class=\"warning-icon\" title=\"Monthly allowance has not been set\" aria-label=\"Monthly allowance has not been set\">⚠️</span>'}</div><div class="big">${euro(p)}</div><div class="row"><span>Buffer above target</span><b>${euro(p-state.target)}</b></div><div class="muted">Uses your recorded savings activity so far, then projects the remaining income, Essentials and monthly allowance through the plan end date. Budget movements into pockets are not treated as spending.${state.allowanceConfigured?"":" <b>Heads up:</b> no Monthly Allowance has been set, so this projection currently assumes €0 flexible spending."}</div></div>
- <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Uses recorded spending already made, then projects only the remaining Essentials through the plan end date. Monthly allowance is excluded. Budget movements into pockets are not treated as spending.</div><div class="muted small" style="margin-top:8px">${allowanceTimelineNote()}</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="muted">Projected outcome</div><div class="big">${euro(ess)}</div><div class="row"><span>Buffer above target</span><b>${euro(ess-state.target)}</b></div></div>`:""}</div>
+ <div class="card"><div class="toggle"><div><b>Essentials-only outcome</b><div class="muted">Uses recorded spending already made, then projects only the remaining Essentials through the plan end date. Monthly allowance is excluded. Budget movements into pockets are not treated as spending.</div><div class="muted small" style="margin-top:8px">${allowanceTimelineNote()}</div></div><div class="switch ${state.showEssentialsOutcome?"on":""}" onclick="toggleEssentials()"><i></i></div></div>${state.showEssentialsOutcome?`<div style="margin-top:18px"><div class="row"><div class="muted">Projected outcome</div><button class="secondary" onclick="refreshEssentialsOutcome()" style="padding:7px 10px">↻ Refresh</button></div><div class="big">${euro(essentialsOutcome())}</div><div class="row"><span>Buffer above target</span><b>${euro(essentialsOutcome()-state.target)}</b></div><div class="muted small">Theoretical max ${euro(theoreticalMax())} − projected Essentials ${euro(projectedEssentialsTotal())}.</div></div>`:""}</div>
  <div class="card"><b>Plan assumptions</b><div class="row small"><span>Timeframe</span><span>${state.years} years</span></div><div class="row small"><span>Start date</span><span>${state.startDate?new Date(state.startDate+"T12:00:00").toLocaleDateString():"Not set"}</span></div><div class="row small"><span>End date</span><b>${planEndDate()?new Date(planEndDate()+"T12:00:00").toLocaleDateString():"Not set"}</b></div><div class="row small"><span>Current annual income</span><span>${euro(state.annualPay)}</span></div><div class="row small"><span>Paychecks / year</span><span>${state.paychecksPerYear}</span></div><div class="row small"><span>Pay schedule</span><span>${payScheduleLabel()}</span></div><div class="muted small">${state.payMode==="automatic"?"Pay is automatically added on the selected schedule.":"Automatic pay is off. Record your pay manually in Cash Flow."}</div><div class="row small"><span>Monthly allowance</span><span>${euro(allowanceForMonth(monthKey()))}</span></div><button class="secondary" onclick="settings()">✎ Edit plan assumptions</button></div>
  <div class="card"><div class="row"><b>Pay history</b><button class="secondary" onclick="addPayChange()">＋ Add pay change</button></div><div class="muted">Raises are applied from their effective date onward. Theoretical max uses the full plan income history; projected finish and Essentials-only use the savings actually recorded so far, then project only the remaining income and costs.</div><div style="margin-top:10px">${(state.payHistory||[]).slice().reverse().map((x,ri)=>{const i=state.payHistory.length-1-ri;return `<div class="item"><div class="row"><span>${new Date(x.effectiveDate+"T12:00:00").toLocaleDateString()}</span><b>${euro(x.annualPay)}/yr</b></div>${x.effectiveDate<=localDateKey()&&(!state.payHistory.slice().some(y=>y.effectiveDate>x.effectiveDate&&y.effectiveDate<=localDateKey()))?'<div class="muted small">Current rate</div>':(x.effectiveDate>localDateKey()?'<div class="muted small">Upcoming</div>':'')}<div style="text-align:right"><button class="icon delete trash-btn" onclick="removePayHistory(${i})" aria-label="Delete pay history entry">🗑</button></div></div>`}).join("")}</div></div>
  <div class="card"><b>Monthly allowance</b><div class="muted">Set your flexible spending limit for food, takeaways, outings, entertainment and anything else you want to spend freely.</div><div class="row" style="margin-top:12px"><b>Current limit</b><b>${euro(allowanceForMonth(monthKey()))}</b></div><div class="muted small" style="margin-top:6px">${allowanceTimelineNote()}</div><div class="allowance-calc">${allowanceCalculationText()}</div><button class="secondary" onclick="editAllowance()">✎ Set allowance</button><button onclick="autoAssignAllowance()">⚙ Auto Assign</button><div class="subhead" style="margin-top:16px">Allowance history</div><div class="muted small">Each change keeps its effective date. A future allowance does not affect the current month until its date arrives.</div><div style="margin-top:8px">${(state.allowanceHistory||[]).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)).map(x=>{const currentEntry=currentAllowanceEntry();const isCurrent=!!currentEntry&&x.effectiveDate===currentEntry.effectiveDate;const upcoming=x.effectiveDate>localDateKey();return `<div class="item"><div class="row"><span>${new Date(x.effectiveDate+"T12:00:00").toLocaleDateString()}</span><b>${euro(x.amount)}/month</b></div><div class="muted small">${upcoming?"Upcoming":(isCurrent?"Current allowance":"Previous allowance")}</div></div>`}).join("")}</div></div>
@@ -834,6 +849,10 @@ function autoAssignAllowance(){
  state.flexible=value;
  save();
  render("plan");
+}
+function refreshEssentialsOutcome(){
+  save();
+  render("plan");
 }
 function theoreticalMaxBreakdown(){
  const keys=planMonthKeys();
