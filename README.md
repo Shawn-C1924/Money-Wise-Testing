@@ -29,3 +29,7 @@ The target structure separates:
 5. PWA/bootstrap code
 
 The migration will be incremental. A working application is required after each iteration before another responsibility is moved.
+
+
+## v0.50 funds model
+MoneyWise now treats Bank Savings, Cash Savings, and Pockets as three internal stores of the same savings pool. Funds can be moved between any two stores. Such movements are blue internal transfers and do not change total Current Savings.

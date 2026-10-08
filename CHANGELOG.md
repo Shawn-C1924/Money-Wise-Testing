@@ -1,3 +1,13 @@
+# MoneyWise Changelog
+
+## v0.50
+- Added a unified three-way internal funds transfer system: Bank Savings ↔ Cash Savings ↔ Pockets.
+- Added a single **Move funds** action from savings areas instead of limiting transfers to Bank ↔ Cash.
+- Pocket-to-bank, pocket-to-cash, bank-to-pocket, cash-to-pocket, and bank ↔ cash transfers are all treated as internal blue movements.
+- Internal transfers do not change Total / Current Savings because the money remains owned by the user.
+- Transfer transactions store both source and destination so deletion and whole-period deletion can reverse the movement correctly.
+- Existing legacy Bank ↔ Cash transfer records remain supported.
+
 ## v0.49 — Savings sources, pockets & allowance/paycheck corrections
 
 - Fixed Theoretical Max presentation with a clear formula hint and retained the detailed info breakdown.
