@@ -1,5 +1,14 @@
 # MoneyWise Changelog
 
+## v0.53
+- Added a unified **Add spending** mode selector for Normal spending, Paycheck, and Budget section.
+- Paycheck mode automatically uses the active annual pay divided by the configured number of paychecks per year and records the amount as income to Bank savings.
+- Added manual Budget section spending: choose a Budget section and record the amount actually spent.
+- A manually recorded Budget section is treated as handled for that pay period, preventing the automatic budget deduction or pocket funding from running again for that section in that period.
+- Manual Budget section spending is reversible through the existing transaction deletion flow.
+- Bumped data version and service-worker cache to v0.53.
+
+
 ## v0.51
 - Fixed Bank savings → Pocket transfers failing with “The transfer could not be completed.”
 - Fixed the underlying Bank/Cash account adjustment helper so successful adjustments return a success result, allowing the unified three-way transfer logic to complete and reverse transfers correctly.

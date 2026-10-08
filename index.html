@@ -149,7 +149,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.51";
+const DATA_VERSION="0.53";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,bankSavings:34000,cashSavings:0,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:0,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -188,8 +188,10 @@ function localDateKey(d=new Date()){return `${d.getFullYear()}-${String(d.getMon
 let state;
 try{
   const saved=JSON.parse(localStorage.getItem("moneywise")||"null");
-  if(saved && /^0\.([1-9][0-9]*)$/.test(String(saved.version)) && Number(String(saved.version).split(".")[1])>=11 && Number(String(saved.version).split(".")[1])<=49){
+  if(saved && /^0\.([1-9][0-9]*)$/.test(String(saved.version)) && Number(String(saved.version).split(".")[1])>=11 && Number(String(saved.version).split(".")[1])<=51){
+    const legacySavingsMissing=saved.bankSavings===undefined&&saved.cashSavings===undefined;
     state={...structuredClone(DEFAULT),...saved,version:DATA_VERSION};
+    if(legacySavingsMissing){state.bankSavings=Math.max(0,Number(saved.startingSavings)||0);state.cashSavings=0;}
   }else{
     state=structuredClone(DEFAULT);
   }
@@ -271,7 +273,9 @@ function handleBackupImport(input){
       const incoming=payload?.state;
       if(!incoming || typeof incoming!=="object")throw new Error("Invalid backup");
       if(!confirm("Restore this MoneyWise backup? Your current data will be replaced by the backup."))return;
+      const legacySavingsMissing=incoming.bankSavings===undefined&&incoming.cashSavings===undefined;
       state={...structuredClone(DEFAULT),...incoming,version:DATA_VERSION};
+      if(legacySavingsMissing){state.bankSavings=Math.max(0,Number(incoming.startingSavings)||0);state.cashSavings=0;}
       if(!state.startDate)state.startDate=localDateKey();
       if(!state.stashHistory)state.stashHistory=[];
       if(!state.monthlyActions)state.monthlyActions={};
@@ -442,8 +446,12 @@ function walletTransactionId(prefix,key,month=monthKey()){return `${prefix}-${ke
 function addWalletBalance(walletId,amount){const w=walletById(walletId);if(!w)return false;w.balance=Math.max(0,(Number(w.balance)||0)+(Number(amount)||0));return true}
 function removeWalletBalance(walletId,amount){const w=walletById(walletId);if(!w)return false;const a=Number(amount)||0;if(a>w.balance)return false;w.balance-=a;return true}
 function walletFundingEnabled(key){return !!state.walletFunding?.[key]?.enabled && !!walletById(state.walletFunding?.[key]?.walletId)}
+function budgetSectionHandled(key,month=monthKey()){
+ return state.transactions.some(x=>x.month===month && x.budgetSection===key && (x.type==="expense" || x.type==="transfer") && !x.automatic);
+}
 function fundBudgetWallet(key,month=monthKey(),forced=false){
  const info=budgetSectionInfo(key);
+ if(budgetSectionHandled(key,month))return false;
  if(!info || !sectionEnabled(key) || !walletFundingEnabled(key))return false;
  const amount=Math.max(0,Number(info.amount)||0),walletId=state.walletFunding[key].walletId;
  if(!amount || !walletById(walletId))return false;
@@ -463,6 +471,7 @@ function budgetSectionInfo(key){
 function budgetDeductionId(key,month=monthKey()){return `budget-deduct-${key}-${month}`}
 function deductBudgetSection(key,month=monthKey(),forced=false){
   const info=budgetSectionInfo(key);
+  if(budgetSectionHandled(key,month))return false;
   if(!info || !sectionEnabled(key))return false;
   const amount=Math.max(0,Number(info.amount)||0);
   if(!amount)return false;
@@ -851,22 +860,45 @@ function showSetup(){
 }
 function finishSetup(){state.years=Math.max(.5,parseFloat(document.getElementById("sy").value)||2);state.startingSavings=Math.max(0,parseFloat(document.getElementById("ss").value)||0);state.annualPay=Math.max(0,parseFloat(document.getElementById("si").value)||0);state.target=Math.max(0,parseFloat(document.getElementById("st").value)||0);upsertAllowanceHistory(localDateKey(),Math.max(0,parseFloat(document.getElementById("sf").value)||0));state.allowanceConfigured=true;state.configured=true;state.startDate=state.startDate||new Date().toISOString().slice(0,10);save();closeModal();render("home")}
 function openAdd(type="expense"){
-  const income=type==="income", wallets=state.wallets||[];
+  const income=type==="income", wallets=state.wallets||[], sections=["recurring","gifts",...(state.customSections||[]).map((_,i)=>`custom-${i}`)].filter(sectionEnabled);
   const catHtml=income?`<option>Income</option><option>Side hustle</option><option>Other</option>`:`<option>General</option><option>Food</option><option>Entertainment</option><option>Clothes</option><option>Transport</option><option>Gifts</option><option>Holiday</option><option>Other</option>`;
+  const sectionOptions=sections.map(k=>{const info=budgetSectionInfo(k);return `<option value="${esc(k)}">${esc(info.title)} — ${euro(info.amount)}/period</option>`}).join("");
   let destinationHtml="";
   if(income){
     const walletOptions=wallets.map(w=>`<option value="${esc(w.id)}">${esc(w.name)} — ${euro(w.balance)}</option>`).join("");
-    destinationHtml=`<label>Where should this money go?</label><select id="incomeDest" onchange="updateIncomeDestination()"><option value="bank">Bank savings</option><option value="cash">Cash savings</option><option value="allowance">Savings + add to allowance</option><option value="wallet">Pocket</option></select><div id="walletDestBox" style="display:none"><label>Pocket</label><select id="incomeWallet">${walletOptions}</select>${wallets.length?'':'<div class=\"muted\">Create a pocket in Plan first.</div>'}</div>`;
-    destinationHtml+=`<label style="display:flex;align-items:center;gap:8px"><input id="isPaycheck" type="checkbox" style="width:auto;margin:0"> Record this as a paycheck</label><div class="muted small">Paycheck entries are checked against the selected pay period so you cannot add the same paycheck twice.</div>`;
+    destinationHtml=`<label>Where should this money go?</label><select id="incomeDest" onchange="updateIncomeDestination()"><option value="bank">Bank savings</option><option value="cash">Cash savings</option><option value="allowance">Savings + add to allowance</option><option value="wallet">Pocket</option></select><div id="walletDestBox" style="display:none"><label>Pocket</label><select id="incomeWallet">${walletOptions}</select>${wallets.length?'':'<div class="muted">Create a pocket in Plan first.</div>'}</div>`;
+    destinationHtml+=`<label style="display:flex;align-items:center;gap:8px"><input id="isPaycheck" type="checkbox" style="width:auto;margin:0"> Record this as a paycheck</label><div class="muted small">Paycheck entries use annual pay ÷ paychecks per year and are checked against the selected pay period.</div>`;
   }else{
     const walletOptions=wallets.map(w=>`<option value="${esc(w.id)}">${esc(w.name)} — ${euro(w.balance)}</option>`).join("");
-    destinationHtml=`<label>Spending source</label><select id="spendSource" onchange="updateSpendingSource()"><option value="allowance">Monthly allowance</option><option value="bank">Bank savings</option><option value="cash">Cash savings</option>${wallets.length?'<option value="wallet">Pocket</option>':''}</select><div id="spendWalletBox" style="display:none"><label>Pocket</label><select id="spendWallet">${walletOptions}</select></div>`;
+    destinationHtml=`<label>What are you adding?</label><select id="spendMode" onchange="updateSpendingMode()"><option value="spending">Normal spending</option><option value="paycheck">Paycheck</option><option value="budget">Budget section</option></select><div id="spendModeNote" class="muted small" style="margin-top:-4px;margin-bottom:8px">Normal spending uses your selected spending source.</div><div id="budgetSectionBox" style="display:none"><label>Budget section</label><select id="budgetSection" onchange="updateBudgetAmount()">${sectionOptions}</select><div class="muted small">Record the amount actually spent. Recording it manually prevents MoneyWise from automatically deducting/funding that section again for this period.</div></div><div id="spendSourceBox"><label>Spending source</label><select id="spendSource" onchange="updateSpendingSource()"><option value="allowance">Monthly allowance</option><option value="bank">Bank savings</option><option value="cash">Cash savings</option>${wallets.length?'<option value="wallet">Pocket</option>':''}</select><div id="spendWalletBox" style="display:none"><label>Pocket</label><select id="spendWallet">${walletOptions}</select></div></div>`;
   }
   document.getElementById("sheet").innerHTML=`<h2>${income?"Add income / profit":"Add spending"}</h2><label>Date</label><input id="txDate" type="date" value="${localDateKey()}"><div class="muted small" style="margin-top:-4px;margin-bottom:8px">Use the date the income or spending actually happened. The transaction will be placed in the corresponding pay period.</div><label>Description</label><input id="desc" placeholder="${income?"e.g. Side hustle":"e.g. Dinner"}"><label>Amount (€)</label><input id="amount" type="number" step=".01"><label>Category</label><select id="cat">${catHtml}</select>${destinationHtml}<button onclick="addTx('${income?"income":"expense"}')">Add</button> <button class="secondary" onclick="closeModal()">Cancel</button>`;
-  document.getElementById("modal").classList.add("open")
+  document.getElementById("modal").classList.add("open");
+  if(!income)updateSpendingMode();
 }
 function updateIncomeDestination(){const d=document.getElementById("incomeDest")?.value;const box=document.getElementById("walletDestBox");if(box)box.style.display=d==="wallet"?"block":"none"}
 function updateSpendingSource(){const d=document.getElementById("spendSource")?.value;const box=document.getElementById("spendWalletBox");if(box)box.style.display=d==="wallet"?"block":"none"}
+function updateBudgetAmount(){
+  const key=document.getElementById("budgetSection")?.value,info=budgetSectionInfo(key),amount=document.getElementById("amount");
+  if(info&&amount){amount.value=(Number(info.amount)||0).toFixed(2);}
+  const desc=document.getElementById("desc");
+  if(info&&desc&&!desc.value)desc.value=`Budget • ${info.title}`;
+}
+function updateSpendingMode(){
+  const mode=document.getElementById("spendMode")?.value||"spending",sourceBox=document.getElementById("spendSourceBox"),budgetBox=document.getElementById("budgetSectionBox"),note=document.getElementById("spendModeNote"),amount=document.getElementById("amount"),desc=document.getElementById("desc");
+  if(sourceBox)sourceBox.style.display=mode==="spending"?"block":"none";
+  if(budgetBox)budgetBox.style.display=mode==="budget"?"block":"none";
+  if(mode==="paycheck"){
+    const value=paycheckAmount();
+    amount.value=value.toFixed(2);amount.readOnly=true;
+    note.textContent=`Paycheck amount: annual pay ${euro(payRateForDate(new Date()))} ÷ ${Number(state.paychecksPerYear)||12} paychecks = ${euro(value)}. It is added to Bank savings.`;
+    desc.value="Paycheck";
+  }else if(mode==="budget"){
+    amount.readOnly=false;note.textContent="Choose a Budget section and record what you actually spent. This replaces the automatic deduction/funding for this section in this period.";updateBudgetAmount();
+  }else{
+    amount.readOnly=false;note.textContent="Normal spending uses your selected spending source.";
+  }
+}
 function addTx(type="expense"){
   let desc=document.getElementById("desc").value.trim()||(type==="income"?"Income":"Spending"),amount=parseFloat(document.getElementById("amount").value);
   if(!amount||amount<=0)return alert("Enter a valid amount.");
@@ -876,15 +908,32 @@ function addTx(type="expense"){
     const dest=document.getElementById("incomeDest")?.value||"bank",walletId=document.getElementById("incomeWallet")?.value;
     if(dest==="wallet" && !walletById(walletId))return alert("Choose a valid pocket.");
     const isPaycheck=!!document.getElementById("isPaycheck")?.checked;
-    if(isPaycheck && paycheckExistsInPeriod(month))return alert(`A paycheck has already been recorded for ${monthLabel(month)}. You cannot add it twice.`);
+    if(isPaycheck){amount=paycheckAmount(new Date(date+"T12:00:00"));desc=desc||"Paycheck";if(paycheckExistsInPeriod(month))return alert(`A paycheck has already been recorded for ${monthLabel(month)}. You cannot add it twice.`);}
     state.transactions.push({id:Date.now().toString(),date,month,desc,amount,cat:document.getElementById("cat").value,type:"income",incomeDestination:dest,walletId:dest==="wallet"?walletId:undefined,allowanceCredit:dest==="allowance",source:dest==="cash"?"cash":dest==="bank"||dest==="allowance"?"bank":undefined,isPaycheck,balanceApplied:true});
     if(dest==="allowance"){adjustSavingsSource("bank",amount);state.allowanceCredits=state.allowanceCredits||{};state.allowanceCredits[month]=(Number(state.allowanceCredits[month])||0)+amount;}
     else if(dest==="wallet")addWalletBalance(walletId,amount);
     else adjustSavingsSource(dest,amount);
   }else{
-    const source=document.getElementById("spendSource")?.value||"allowance",walletId=document.getElementById("spendWallet")?.value;
-    if(source==="wallet"){const w=walletById(walletId);if(!w)return alert("Choose a valid pocket.");if(amount>(Number(w.balance)||0))return alert(`That pocket only has ${euro(w.balance)} available.`);removeWalletBalance(walletId,amount);state.transactions.push({id:Date.now().toString(),date,month,desc,amount,cat:document.getElementById("cat").value,type:"expense",walletId,fromWallet:true,balanceApplied:true});}
-    else {const savingsSource=source==="cash"?"cash":"bank",availableSource=Number(savingsSource==="cash"?state.cashSavings:state.bankSavings)||0;if(amount>availableSource)return alert(`Not enough ${savingsSourceLabel(savingsSource)} available.`);adjustSavingsSource(savingsSource,-amount);state.transactions.push({id:Date.now().toString(),date,month,desc,amount,cat:document.getElementById("cat").value,type:"expense",source:savingsSource,balanceApplied:true});}
+    const mode=document.getElementById("spendMode")?.value||"spending";
+    if(mode==="paycheck"){
+      const payAmount=paycheckAmount(new Date(date+"T12:00:00"));
+      if(paycheckExistsInPeriod(month))return alert(`A paycheck has already been recorded for ${monthLabel(month)}. You cannot add it twice.`);
+      adjustSavingsSource("bank",payAmount);
+      state.transactions.push({id:Date.now().toString(),date,month,desc:"Paycheck",amount:payAmount,cat:"Income",type:"income",incomeDestination:"bank",source:"bank",balanceApplied:true,isPaycheck:true,manual:true});
+    }else if(mode==="budget"){
+      const key=document.getElementById("budgetSection")?.value,info=budgetSectionInfo(key);
+      if(!info)return alert("Choose a valid Budget section.");
+      const id=budgetDeductionId(key,month);
+      if(state.transactions.some(x=>x.id===id)||budgetSectionHandled(key,month))return alert(`${info.title} has already been recorded for ${monthLabel(month)}.`);
+      const available=Number(state.bankSavings)||0;
+      if(amount>available)return alert(`Not enough Bank savings available. You have ${euro(available)}.`);
+      adjustSavingsSource("bank",-amount);
+      state.transactions.push({id,date,month,desc:desc||`Budget • ${info.title}`,amount,cat:"Budget",type:"expense",budgetSection:key,source:"bank",balanceApplied:true,manual:true});
+    }else{
+      const source=document.getElementById("spendSource")?.value||"allowance",walletId=document.getElementById("spendWallet")?.value;
+      if(source==="wallet"){const w=walletById(walletId);if(!w)return alert("Choose a valid pocket.");if(amount>(Number(w.balance)||0))return alert(`That pocket only has ${euro(w.balance)} available.`);removeWalletBalance(walletId,amount);state.transactions.push({id:Date.now().toString(),date,month,desc,amount,cat:document.getElementById("cat").value,type:"expense",walletId,fromWallet:true,balanceApplied:true});}
+      else {const savingsSource=source==="cash"?"cash":"bank",availableSource=Number(savingsSource==="cash"?state.cashSavings:state.bankSavings)||0;if(amount>availableSource)return alert(`Not enough ${savingsSourceLabel(savingsSource)} available.`);adjustSavingsSource(savingsSource,-amount);state.transactions.push({id:Date.now().toString(),date,month,desc,amount,cat:document.getElementById("cat").value,type:"expense",source:savingsSource,balanceApplied:true});}
+    }
   }
   save();closeModal();render("cashflow")
 }
