@@ -565,7 +565,14 @@ function payRateForDate(date){const key=date instanceof Date?date.toISOString().
 function planIncomeTotalAllPeriods(){
  const keys=planMonthKeys();
  if(!keys.length)return 0;
- return keys.reduce((total,k)=>total+payRateForDate(periodStartDate(k))/12,0);
+ const paychecks=Math.max(1,Number(state.paychecksPerYear)||12);
+ const extra=Math.max(0,paychecks-12);
+ return keys.reduce((total,k)=>{
+   const rate=payRateForDate(periodStartDate(k));
+   const monthly=rate/12;
+   const extraMonthly=extra>0?(rate/paychecks)*(extra/12):0;
+   return total+monthly+extraMonthly;
+ },0);
 }
 function planIncomeTotal(){
   if(!state.startDate)return (Number(state.annualPay)||0)*state.years;
@@ -632,24 +639,24 @@ function projectedFutureCosts(includeAllowance){
       total+=planned()+(includeAllowance?allowanceForMonth(k):0);
     }
   });
-  if(includeAllowance && (Number(state.paychecksPerYear)||12)>12){
-    const extraPerYear=(Number(state.paychecksPerYear)||12)-12;
-    const yearsRemaining=Math.max(0,allowancePeriods/12);
-    let extra=extraPerYear*yearsRemaining;
-    const avgPerPay=allowancePeriods?keys.filter(k=>k>=current).reduce((a,k)=>a+allowanceForMonth(k),0)/allowancePeriods:0;
-    total+=extra*avgPerPay;
-  }
+  // Allowance is monthly, regardless of how many paychecks are received.
+  // Extra paychecks increase projected income; they do not create extra
+  // allowance months.
   return total;
 }
 function projectedFutureIncome(){
   const keys=planMonthKeys();
   if(!keys.length)return 0;
   const today=new Date(); today.setHours(12,0,0,0);
-  const paychecks=Number(state.paychecksPerYear)||12;
+  const paychecks=Math.max(1,Number(state.paychecksPerYear)||12);
+  const extra=Math.max(0,paychecks-12);
   return keys.reduce((total,k)=>{
     const payDate=periodStartDate(k);
     if(payDate<=today)return total;
-    return total+payRateForDate(payDate)/12;
+    const rate=payRateForDate(payDate);
+    const monthly=rate/12;
+    const extraMonthly=extra>0?(rate/paychecks)*(extra/12):0;
+    return total+monthly+extraMonthly;
   },0);
 }
 function projected(){return currentSavings()+projectedFutureIncome()-projectedFutureCosts(true)}

@@ -1,12 +1,12 @@
 # MoneyWise Changelog
 
-## v0.53
+## v0.54
 - Added a unified **Add spending** mode selector for Normal spending, Paycheck, and Budget section.
 - Paycheck mode automatically uses the active annual pay divided by the configured number of paychecks per year and records the amount as income to Bank savings.
 - Added manual Budget section spending: choose a Budget section and record the amount actually spent.
 - A manually recorded Budget section is treated as handled for that pay period, preventing the automatic budget deduction or pocket funding from running again for that section in that period.
 - Manual Budget section spending is reversible through the existing transaction deletion flow.
-- Bumped data version and service-worker cache to v0.53.
+- Bumped data version and service-worker cache to v0.54.
 
 
 ## v0.51
