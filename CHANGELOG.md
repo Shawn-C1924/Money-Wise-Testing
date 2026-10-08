@@ -1,5 +1,10 @@
 # MoneyWise Changelog
 
+## v0.51
+- Fixed Bank savings → Pocket transfers failing with “The transfer could not be completed.”
+- Fixed the underlying Bank/Cash account adjustment helper so successful adjustments return a success result, allowing the unified three-way transfer logic to complete and reverse transfers correctly.
+- Bumped the service-worker cache to v0.51.
+
 ## v0.50
 - Added a unified three-way internal funds transfer system: Bank Savings ↔ Cash Savings ↔ Pockets.
 - Added a single **Move funds** action from savings areas instead of limiting transfers to Bank ↔ Cash.

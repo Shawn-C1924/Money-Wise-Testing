@@ -149,7 +149,7 @@ input,select{width:100%;padding:12px;background:var(--card);color:var(--text);bo
 </div>
 <div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
 <script>
-const DATA_VERSION="0.49";
+const DATA_VERSION="0.51";
 const DEFAULT={version:DATA_VERSION,configured:true,startingSavings:34000,bankSavings:34000,cashSavings:0,annualPay:32000,target:75000,years:2,showEssentialsOutcome:true,flexible:0,recurring:[
       {name:"Gas",amount:40,frequency:"monthly"},
       {name:"Xiaomi",amount:3.50,frequency:"monthly"},
@@ -396,7 +396,7 @@ function incomeTotal(k=monthKey()){return incomes(k).reduce((a,x)=>a+(Number(x.a
 function netCashFlow(){return state.transactions.reduce((a,x)=>a+(x.type==="income"?1:x.type==="transfer"||x.fromWallet?0:-1)*(Number(x.amount)||0),0)}
 function currentSavings(){return (Number(state.bankSavings)||0)+(Number(state.cashSavings)||0)+walletTotal()}
 function bankCashTotal(){return (Number(state.bankSavings)||0)+(Number(state.cashSavings)||0)}
-function adjustSavingsSource(source,delta){if(source==="cash")state.cashSavings=Math.max(0,(Number(state.cashSavings)||0)+delta);else state.bankSavings=Math.max(0,(Number(state.bankSavings)||0)+delta)}
+function adjustSavingsSource(source,delta){if(source==="cash"){state.cashSavings=Math.max(0,(Number(state.cashSavings)||0)+delta);return true}if(source==="bank"){state.bankSavings=Math.max(0,(Number(state.bankSavings)||0)+delta);return true}return false}
 function savingsSourceLabel(source){return source==="cash"?"Cash savings":"Bank savings"}
 function accountLabel(account){
   if(account==="bank")return "Bank savings";
